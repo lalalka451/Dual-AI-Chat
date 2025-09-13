@@ -169,6 +169,9 @@ const App: React.FC = () => {
   const notepadHistoryIndexRef = useRef<number>(0);
   useEffect(() => { notepadHistoryRef.current = notepadHistory; }, [notepadHistory]);
   useEffect(() => { notepadHistoryIndexRef.current = currentNotepadHistoryIndex; }, [currentNotepadHistoryIndex]);
+  // Keep a ref of messages to include pre-user messages when creating a conversation
+  const messagesRef = useRef<ChatMessage[]>([]);
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
 
   const addMessage = useCallback((
     text: string,
@@ -197,23 +200,31 @@ const App: React.FC = () => {
       let convId = currentConversationIdRef.current;
       let updated = prev;
       if (!convId) {
-        convId = generateUniqueId();
-        currentConversationIdRef.current = convId;
-        setCurrentConversationId(convId);
-        const now = new Date().toISOString();
-        updated = [
-          {
-            id: convId,
-            title: sender === MessageSender.User ? makeConversationTitleFromText(text) : '新会话',
-            createdAt: now,
-            updatedAt: now,
-            messages: [storeMsg],
-            notepad: notepadContentRef.current,
-            notepadHistory: notepadHistoryRef.current,
-            notepadHistoryIndex: notepadHistoryIndexRef.current,
-          },
-          ...prev,
-        ];
+        if (sender === MessageSender.User) {
+          // First user input: create new conversation including any prior system messages
+          convId = generateUniqueId();
+          currentConversationIdRef.current = convId;
+          setCurrentConversationId(convId);
+          const now = new Date().toISOString();
+          const preStored = messagesRef.current.map(m => ({ ...m, timestamp: m.timestamp.toISOString() })) as StoredChatMessage[];
+          const allMsgs: StoredChatMessage[] = [...preStored, storeMsg];
+          updated = [
+            {
+              id: convId,
+              title: makeConversationTitleFromText(text),
+              createdAt: now,
+              updatedAt: now,
+              messages: allMsgs,
+              notepad: notepadContentRef.current,
+              notepadHistory: notepadHistoryRef.current,
+              notepadHistoryIndex: notepadHistoryIndexRef.current,
+            },
+            ...prev,
+          ];
+        } else {
+          // Do not create a conversation for non-user messages when none exists
+          return prev;
+        }
       } else {
         let found = false;
         updated = prev.map(c => {
@@ -224,8 +235,9 @@ const App: React.FC = () => {
         });
         if (!found) {
           const now = new Date().toISOString();
+          const preStored = messagesRef.current.map(m => ({ ...m, timestamp: m.timestamp.toISOString() })) as StoredChatMessage[];
           updated = [
-            { id: convId, title: sender === MessageSender.User ? makeConversationTitleFromText(text) : '新会话', createdAt: now, updatedAt: now, messages: [storeMsg], notepad: notepadContentRef.current, notepadHistory: notepadHistoryRef.current, notepadHistoryIndex: notepadHistoryIndexRef.current },
+            { id: convId!, title: sender === MessageSender.User ? makeConversationTitleFromText(text) : '新会话', createdAt: now, updatedAt: now, messages: [...preStored, storeMsg], notepad: notepadContentRef.current, notepadHistory: notepadHistoryRef.current, notepadHistoryIndex: notepadHistoryIndexRef.current },
             ...updated,
           ];
         }
@@ -765,9 +777,11 @@ const App: React.FC = () => {
             )}
           </div>
           <button onClick={handleClearChat}
-            className="p-1.5 md:p-2 text-gray-500 hover:text-sky-600 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-gray-50 rounded-md shrink-0 disabled:opacity-70 disabled:cursor-not-allowed"
-            aria-label="清空会话" title="清空会话" disabled={isLoading && !cancelRequestRef.current && !failedStepInfo}
-            ><RefreshCwIcon size={20} /> 
+            className="flex items-center px-2 py-1.5 md:px-2 md:py-2 text-gray-500 hover:text-sky-600 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-gray-50 rounded-md shrink-0 disabled:opacity-70 disabled:cursor-not-allowed"
+            aria-label="新会话" title="新会话" disabled={isLoading && !cancelRequestRef.current && !failedStepInfo}
+            >
+            <RefreshCwIcon size={20} />
+            <span className="ml-1 hidden sm:inline">新会话</span>
           </button>
         </div>
       </header>
