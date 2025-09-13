@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { DiscussionMode } from '../types';
 import { MIN_MANUAL_FIXED_TURNS } from '../constants'; 
 import { X, Bot, MessagesSquare, SlidersHorizontal, Info, RotateCcw, CaseSensitive, KeyRound, Globe, Settings, Database, Brain, Sparkles } from 'lucide-react'; 
@@ -92,6 +92,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   openAiMuseModelId,
   onOpenAiMuseModelIdChange,
 }) => {
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('keydown', onKey); };
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const handleDiscussionModeToggle = () => {
@@ -134,6 +141,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby="settings-modal-title"
+        onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col transform transition-all duration-300 ease-in-out scale-100">
         <header className="p-4 border-b border-gray-300 flex items-center justify-between sticky top-0 bg-gray-50 rounded-t-lg z-10">

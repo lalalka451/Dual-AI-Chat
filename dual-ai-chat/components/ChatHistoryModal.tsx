@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, Trash2, Clock, MessageSquare } from 'lucide-react';
 import { ChatConversation } from '../types';
 import {
@@ -38,6 +38,13 @@ const ChatHistoryModal: React.FC<ChatHistoryModalProps> = ({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState<string>('');
   const [exporting, setExporting] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('keydown', onKey); };
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -151,7 +158,13 @@ const ChatHistoryModal: React.FC<ChatHistoryModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center p-4 z-50" role="dialog" aria-modal="true" aria-labelledby="chat-history-modal-title">
+    <div
+      className="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center p-4 z-50"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="chat-history-modal-title"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
       <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col">
         <header className="p-4 border-b border-gray-300 flex items-center justify-between sticky top-0 bg-gray-50 rounded-t-lg z-10">
           <h2 id="chat-history-modal-title" className="text-lg font-semibold text-gray-800">聊天历史</h2>
