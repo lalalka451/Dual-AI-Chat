@@ -132,6 +132,13 @@ const ChatHistoryModal: React.FC<ChatHistoryModalProps> = ({
               historyIndex: typeof p.historyIndex === 'number' ? p.historyIndex : (Array.isArray(p.history) ? p.history.length - 1 : undefined),
             })) : undefined;
             const activeNotepadId = typeof raw.activeNotepadId === 'string' ? raw.activeNotepadId : undefined;
+            const councilAdvisors = Array.isArray(raw.councilAdvisors) ? raw.councilAdvisors.map((a: any) => ({
+              id: String(a.id || `${Math.random().toString(36).slice(2)}`),
+              name: String(a.name || ''),
+              archetype: a.archetype ? String(a.archetype) : undefined,
+              strengths: a.strengths ? String(a.strengths) : undefined,
+              summary: a.summary ? String(a.summary) : undefined,
+            })) : undefined;
             const messages = Array.isArray(raw.messages) ? raw.messages.map((m: any) => ({
               id: String(m.id || `${Math.random().toString(36).slice(2)}`),
               text: String(m.text || ''),
@@ -142,7 +149,7 @@ const ChatHistoryModal: React.FC<ChatHistoryModalProps> = ({
               image: m.image && m.image.dataUrl ? { dataUrl: String(m.image.dataUrl), name: String(m.image.name || ''), type: String(m.image.type || '') } : undefined,
               textAttachment: m.textAttachment && m.textAttachment.content ? { name: String(m.textAttachment.name || '附件.txt'), content: String(m.textAttachment.content) } : undefined,
             })) : [];
-            return { id, title, createdAt, updatedAt, messages, notepad, notepadHistory, notepadHistoryIndex, notepads, activeNotepadId } as ChatConversation;
+            return { id, title, createdAt, updatedAt, messages, notepad, notepadHistory, notepadHistoryIndex, notepads, activeNotepadId, councilAdvisors } as ChatConversation;
           } catch {
             return null;
           }

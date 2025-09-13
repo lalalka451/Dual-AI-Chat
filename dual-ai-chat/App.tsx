@@ -39,6 +39,11 @@ import ChatHistoryModal from './components/ChatHistoryModal';
     THINKING_BUDGET_ACTIVE_STORAGE_KEY,
     COGNITO_SYSTEM_PROMPT_STORAGE_KEY,
     MUSE_SYSTEM_PROMPT_STORAGE_KEY,
+    USE_COUNCIL_MODE_STORAGE_KEY,
+    COUNCIL_SYSTEM_PROMPT_STORAGE_KEY,
+    COUNCIL_SYSTEM_PROMPT_DEFAULT,
+    MUSE_COUNCIL_HELPER_PROMPT_DEFAULT,
+    USE_COUNCIL_AUTOGEN_STORAGE_KEY,
   } from './constants';
 import { BotMessageSquare, AlertTriangle, RefreshCcw as RefreshCwIcon, Settings2, Brain, Sparkles, Database, Download } from 'lucide-react'; 
 
@@ -117,6 +122,15 @@ const App: React.FC = () => {
   }); // Applicable to Gemini
   const [cognitoSystemPrompt, setCognitoSystemPrompt] = useState<string>(() => localStorage.getItem(COGNITO_SYSTEM_PROMPT_STORAGE_KEY) || COGNITO_SYSTEM_PROMPT_HEADER);
   const [museSystemPrompt, setMuseSystemPrompt] = useState<string>(() => localStorage.getItem(MUSE_SYSTEM_PROMPT_STORAGE_KEY) || MUSE_SYSTEM_PROMPT_HEADER);
+  const [useCouncilMode, setUseCouncilMode] = useState<boolean>(() => {
+    const v = localStorage.getItem(USE_COUNCIL_MODE_STORAGE_KEY);
+    return v ? v === 'true' : false;
+  });
+  const [councilSystemPrompt, setCouncilSystemPrompt] = useState<string>(() => localStorage.getItem(COUNCIL_SYSTEM_PROMPT_STORAGE_KEY) || COUNCIL_SYSTEM_PROMPT_DEFAULT);
+  const [useCouncilAutoGenerate, setUseCouncilAutoGenerate] = useState<boolean>(() => {
+    const v = localStorage.getItem(USE_COUNCIL_AUTOGEN_STORAGE_KEY);
+    return v ? v === 'true' : true;
+  });
   const [fontSizeScale, setFontSizeScale] = useState<number>(() => {
     const storedScale = localStorage.getItem(FONT_SIZE_STORAGE_KEY);
     return storedScale ? parseFloat(storedScale) : DEFAULT_FONT_SIZE_SCALE;
@@ -181,6 +195,13 @@ const App: React.FC = () => {
     ? (currentConversation as any).notepads as Array<{ id: string; title?: string; content: string; history?: string[]; historyIndex?: number }>
     : [];
   const activePadId: string | undefined = currentConversation ? (currentConversation as any).activeNotepadId : undefined;
+  const currentCouncilAdvisors = useMemo(() => (currentConversation && Array.isArray((currentConversation as any).councilAdvisors)) ? (currentConversation as any).councilAdvisors as Array<{ id: string; name: string; archetype?: string; strengths?: string; summary?: string }>
+    : [], [currentConversation]);
+  const setCurrentConversationCouncilAdvisors = useCallback((advisors: Array<{ id: string; name: string; archetype?: string; strengths?: string; summary?: string }>) => {
+    const cid = currentConversationIdRef.current;
+    if (!cid) return;
+    setConversations(prev => prev.map(c => c.id === cid ? { ...c, councilAdvisors: advisors, updatedAt: new Date().toISOString() } : c));
+  }, []);
 
   const selectNotepad = useCallback((id: string) => {
     const cid = currentConversationIdRef.current;
@@ -394,12 +415,16 @@ const App: React.FC = () => {
     discussionMode,
     manualFixedTurns,
     isThinkingBudgetActive, 
-    cognitoSystemPrompt,
-    museSystemPrompt,
+    cognitoSystemPrompt: (useCouncilMode ? councilSystemPrompt : cognitoSystemPrompt),
+    museSystemPrompt: (useCouncilMode ? MUSE_COUNCIL_HELPER_PROMPT_DEFAULT : museSystemPrompt),
     notepadContent, 
     startProcessingTimer,
     stopProcessingTimer,
     currentQueryStartTimeRef,
+    useCouncilMode,
+    useCouncilAutoGenerate,
+    councilAdvisors: currentCouncilAdvisors,
+    setCouncilAdvisors: setCurrentConversationCouncilAdvisors,
   });
 
   // Save Gemini custom config
@@ -422,6 +447,9 @@ const App: React.FC = () => {
   useEffect(() => { try { localStorage.setItem(THINKING_BUDGET_ACTIVE_STORAGE_KEY, isThinkingBudgetActive.toString()); } catch {} }, [isThinkingBudgetActive]);
   useEffect(() => { try { localStorage.setItem(COGNITO_SYSTEM_PROMPT_STORAGE_KEY, cognitoSystemPrompt); } catch {} }, [cognitoSystemPrompt]);
   useEffect(() => { try { localStorage.setItem(MUSE_SYSTEM_PROMPT_STORAGE_KEY, museSystemPrompt); } catch {} }, [museSystemPrompt]);
+  useEffect(() => { try { localStorage.setItem(USE_COUNCIL_MODE_STORAGE_KEY, useCouncilMode.toString()); } catch {} }, [useCouncilMode]);
+  useEffect(() => { try { localStorage.setItem(COUNCIL_SYSTEM_PROMPT_STORAGE_KEY, councilSystemPrompt); } catch {} }, [councilSystemPrompt]);
+  useEffect(() => { try { localStorage.setItem(USE_COUNCIL_AUTOGEN_STORAGE_KEY, useCouncilAutoGenerate.toString()); } catch {} }, [useCouncilAutoGenerate]);
 
 
   useEffect(() => {
@@ -1093,6 +1121,14 @@ const App: React.FC = () => {
           onOpenAiCognitoModelIdChange={(e) => setOpenAiCognitoModelId(e.target.value)}
           openAiMuseModelId={openAiMuseModelId}
           onOpenAiMuseModelIdChange={(e) => setOpenAiMuseModelId(e.target.value)}
+          // Council Mode
+          useCouncilMode={useCouncilMode}
+          onUseCouncilModeChange={() => setUseCouncilMode(v => !v)}
+          councilSystemPrompt={councilSystemPrompt}
+          onCouncilPromptChange={(e) => setCouncilSystemPrompt(e.target.value)}
+          onResetCouncilPrompt={() => setCouncilSystemPrompt(COUNCIL_SYSTEM_PROMPT_DEFAULT)}
+          useCouncilAutoGenerate={useCouncilAutoGenerate}
+          onUseCouncilAutoGenerateChange={() => setUseCouncilAutoGenerate(v => !v)}
         />
       )}
       {isHistoryModalOpen && (

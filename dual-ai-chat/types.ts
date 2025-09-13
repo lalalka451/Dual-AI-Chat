@@ -47,6 +47,8 @@ export interface ChatConversation {
   // Support multiple notebooks per conversation
   notepads?: ConversationNotepad[];
   activeNotepadId?: string;
+  // Wisdom Council advisors for this conversation
+  councilAdvisors?: CouncilAdvisor[];
 }
 
 export interface ConversationNotepad {
@@ -55,6 +57,14 @@ export interface ConversationNotepad {
   content: string;
   history?: string[];
   historyIndex?: number;
+}
+
+export interface CouncilAdvisor {
+  id: string;
+  name: string;
+  archetype?: string;
+  strengths?: string;
+  summary?: string;
 }
 
 // Updated types for structured notepad modifications based on HTML-like tags

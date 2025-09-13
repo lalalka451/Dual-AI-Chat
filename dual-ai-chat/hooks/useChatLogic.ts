@@ -1,6 +1,6 @@
 
 import { useState, useRef, useCallback } from 'react';
-import { ChatMessage, MessageSender, MessagePurpose, FailedStepPayload, DiscussionMode } from '../types'; 
+import { ChatMessage, MessageSender, MessagePurpose, FailedStepPayload, DiscussionMode, CouncilAdvisor } from '../types'; 
 import { generateResponse as generateGeminiResponse } from '../services/geminiService';
 import { generateOpenAiResponse } from '../services/openaiService'; 
 import {
@@ -54,6 +54,11 @@ interface UseChatLogicProps {
   startProcessingTimer: () => void;
   stopProcessingTimer: () => void;
   currentQueryStartTimeRef: React.MutableRefObject<number | null>;
+  // Council mode
+  useCouncilMode?: boolean;
+  useCouncilAutoGenerate?: boolean;
+  councilAdvisors?: CouncilAdvisor[];
+  setCouncilAdvisors?: (advisors: CouncilAdvisor[]) => void;
 }
 
 export const useChatLogic = ({
@@ -82,6 +87,10 @@ export const useChatLogic = ({
   startProcessingTimer,
   stopProcessingTimer,
   currentQueryStartTimeRef,
+  useCouncilMode,
+  useCouncilAutoGenerate,
+  councilAdvisors,
+  setCouncilAdvisors,
 }: UseChatLogicProps) => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [discussionLog, setDiscussionLog] = useState<string[]>([]);
@@ -247,7 +256,14 @@ export const useChatLogic = ({
 
     const imageInstructionForAI = imageApiPartForFlow ? "用户还提供了一张图片。请在您的分析和回复中同时考虑此图片和文本查询。" : "";
     const discussionModeInstructionText = discussionMode === DiscussionMode.AiDriven ? AI_DRIVEN_DISCUSSION_INSTRUCTION_PROMPT_PART : "";
-    const commonPromptInstructions = () => NOTEPAD_INSTRUCTION_PROMPT_PART.replace('{notepadContent}', formatNotepadContentForAI(notepadContent)) + discussionModeInstructionText;
+    const councilInstructionText = (() => {
+      if (!useCouncilMode) return "";
+      const list = (councilAdvisors && councilAdvisors.length > 0)
+        ? councilAdvisors.map((a, i) => `${i + 1}. ${a.name}${a.archetype ? `（${a.archetype}）` : ''}${a.strengths ? ` — ${a.strengths}` : ''}`).join('\n')
+        : '（尚未生成顾问，若需要，请先从用户输入中推断并生成 5 位顾问）';
+      return `\n【智慧委员会模式】\n顾问名单：\n${list}\n要求：在最终输出中以“Advisory Panel Intro / Roundtable / Crossfire / Synthesis / Final Prompt”结构呈现；仅当所有顾问都表达达成一致或同意结束时，才在你的回复末尾附加 ${DISCUSSION_COMPLETE_TAG}。`;
+    })();
+    const commonPromptInstructions = () => NOTEPAD_INSTRUCTION_PROMPT_PART.replace('{notepadContent}', formatNotepadContentForAI(notepadContent)) + discussionModeInstructionText + councilInstructionText;
 
     let initialLoopTurn = 0;
     let skipMuseInFirstIteration = false;
@@ -491,7 +507,51 @@ export const useChatLogic = ({
       return `用户还提供了一个文本附件 \"${textAttachment.name}\"，内容如下：\n---\n${snippet}\n---\n请将该附件与用户查询一起考虑。`;
     })() : "";
     const discussionModeInstructionText = discussionMode === DiscussionMode.AiDriven ? AI_DRIVEN_DISCUSSION_INSTRUCTION_PROMPT_PART : "";
-    const commonPromptInstructions = () => NOTEPAD_INSTRUCTION_PROMPT_PART.replace('{notepadContent}', formatNotepadContentForAI(notepadContent)) + discussionModeInstructionText;
+    const councilInstructionText = (() => {
+      if (!useCouncilMode) return "";
+      const list = (councilAdvisors && councilAdvisors.length > 0)
+        ? councilAdvisors.map((a, i) => `${i + 1}. ${a.name}${a.archetype ? `（${a.archetype}）` : ''}${a.strengths ? ` — ${a.strengths}` : ''}`).join('\n')
+        : '（尚未生成顾问，若需要，请先从用户输入中推断并生成 5 位顾问）';
+      return `\n【智慧委员会模式】\n顾问名单：\n${list}\n要求：在最终输出中以“Advisory Panel Intro / Roundtable / Crossfire / Synthesis / Final Prompt”结构呈现；仅当所有顾问都表达达成一致或同意结束时，才在你的回复末尾附加 ${DISCUSSION_COMPLETE_TAG}。`;
+    })();
+    const commonPromptInstructions = () => NOTEPAD_INSTRUCTION_PROMPT_PART.replace('{notepadContent}', formatNotepadContentForAI(notepadContent)) + discussionModeInstructionText + councilInstructionText;
+
+    // Auto-generate council advisors if enabled and none exist
+    if (useCouncilMode && useCouncilAutoGenerate && setCouncilAdvisors && (!councilAdvisors || councilAdvisors.length === 0)) {
+      try {
+        const genId = 'cognito-generate-council';
+        addMessage('正在生成智慧委员会顾问名单…', MessageSender.System, MessagePurpose.SystemNotification);
+        const prompt = `基于以下用户问题，生成 5 位合适的智慧委员会顾问。要求多样化（哲学/企业/科学/精神/政策等），每位包含 name、archetype、strengths（一句话）。仅输出 JSON 数组，不要解释。\n用户问题："${userInput}"`;
+        const resp = await commonAIStepExecution(
+          genId, prompt, cognitoModelDetails, MessageSender.Cognito, MessagePurpose.SystemNotification, undefined, userInput
+        );
+        const text = resp.spokenText || '';
+        const match = text.match(/\[[\s\S]*\]/);
+        let advisors: CouncilAdvisor[] = [];
+        if (match) {
+          try {
+            const arr = JSON.parse(match[0]);
+            if (Array.isArray(arr)) {
+              advisors = arr.slice(0, 5).map((a: any) => ({ id: Math.random().toString(36).slice(2), name: String(a.name || ''), archetype: a.archetype ? String(a.archetype) : undefined, strengths: a.strengths ? String(a.strengths) : undefined }));
+            }
+          } catch {}
+        }
+        if (advisors.length === 0) {
+          // Fallback: simple split by lines
+          const lines = text.split('\n').filter(Boolean).slice(0, 5);
+          advisors = lines.map((line, i) => ({ id: Math.random().toString(36).slice(2), name: line.replace(/^[-*\d.\s]*/,'').trim() || `Advisor ${i+1}` }));
+        }
+        if (advisors.length > 0) {
+          setCouncilAdvisors(advisors);
+          const summary = advisors.map((a, i) => `${i+1}) ${a.name}${a.archetype ? `（${a.archetype}）` : ''}${a.strengths ? ` — ${a.strengths}` : ''}`).join('； ');
+          addMessage(`已生成顾问：${summary}`, MessageSender.System, MessagePurpose.SystemNotification);
+        } else {
+          addMessage('未能自动生成顾问列表，请继续输入或手动指定顾问。', MessageSender.System, MessagePurpose.SystemNotification);
+        }
+      } catch (e) {
+        addMessage('生成顾问列表失败，继续进行讨论。', MessageSender.System, MessagePurpose.SystemNotification);
+      }
+    }
 
     try {
       const cognitoInitialStepIdentifier = 'cognito-initial-to-muse';

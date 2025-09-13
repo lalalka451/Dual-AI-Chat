@@ -2,7 +2,7 @@
 import React, { useEffect } from 'react';
 import { DiscussionMode } from '../types';
 import { MIN_MANUAL_FIXED_TURNS } from '../constants'; 
-import { X, Bot, MessagesSquare, SlidersHorizontal, Info, RotateCcw, CaseSensitive, KeyRound, Globe, Settings, Database, Brain, Sparkles } from 'lucide-react'; 
+import { X, Bot, MessagesSquare, SlidersHorizontal, Info, RotateCcw, CaseSensitive, KeyRound, Globe, Settings, Database, Brain, Sparkles, Users } from 'lucide-react'; 
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -45,6 +45,15 @@ interface SettingsModalProps {
   onOpenAiCognitoModelIdChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   openAiMuseModelId: string;
   onOpenAiMuseModelIdChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+
+  // Council Mode
+  useCouncilMode: boolean;
+  onUseCouncilModeChange: () => void;
+  councilSystemPrompt: string;
+  onCouncilPromptChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  onResetCouncilPrompt: () => void;
+  useCouncilAutoGenerate?: boolean;
+  onUseCouncilAutoGenerateChange?: () => void;
 }
 
 const FONT_SIZE_OPTIONS = [
@@ -91,6 +100,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   onOpenAiCognitoModelIdChange,
   openAiMuseModelId,
   onOpenAiMuseModelIdChange,
+  useCouncilMode,
+  onUseCouncilModeChange,
+  councilSystemPrompt,
+  onCouncilPromptChange,
+  onResetCouncilPrompt,
+  useCouncilAutoGenerate,
+  onUseCouncilAutoGenerateChange,
 }) => {
   useEffect(() => {
     if (!isOpen) return;
@@ -418,6 +434,71 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                   disabled={isLoading || !supportsSystemInstruction}
                   aria-label="Muse系统提示词"
                 />
+              </div>
+            </div>
+          </section>
+
+          {/* Wisdom Council Mode Section */}
+          <section aria-labelledby="council-mode-heading">
+            <h3 id="council-mode-heading" className={sectionHeadingClass}>智慧委员会模式</h3>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <label htmlFor="useCouncilModeToggle" className={`${toggleLabelBaseClass} cursor-pointer hover:text-sky-600`}>
+                  <Users size={20} className="mr-2 text-sky-600" />
+                  <span className="select-none">启用智慧委员会（Council）</span>
+                </label>
+                <div className={toggleButtonContainerClass}>
+                  <button
+                    id="useCouncilModeToggle"
+                    onClick={onUseCouncilModeChange}
+                    className={`${toggleButtonClass}`}
+                    role="switch"
+                    aria-checked={useCouncilMode}
+                  >
+                    <span className={`${toggleButtonSwitchClass} ${useCouncilMode ? 'bg-sky-500' : 'bg-gray-300'}`}></span>
+                    <span className={`${toggleButtonKnobClass} ${useCouncilMode ? 'translate-x-4' : ''}`}></span>
+                  </button>
+                  <span className={toggleTextClass}>{useCouncilMode ? '开启' : '关闭'}</span>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <label htmlFor="autoGenCouncilToggle" className={`${toggleLabelBaseClass} cursor-pointer hover:text-sky-600`}>
+                  <Users size={20} className="mr-2 text-sky-600" />
+                  <span className="select-none">每个新会话自动生成 5 位顾问</span>
+                </label>
+                <div className={toggleButtonContainerClass}>
+                  <button
+                    id="autoGenCouncilToggle"
+                    onClick={onUseCouncilAutoGenerateChange}
+                    className={`${toggleButtonClass}`}
+                    role="switch"
+                    aria-checked={!!useCouncilAutoGenerate}
+                  >
+                    <span className={`${toggleButtonSwitchClass} ${useCouncilAutoGenerate ? 'bg-sky-500' : 'bg-gray-300'}`}></span>
+                    <span className={`${toggleButtonKnobClass} ${useCouncilAutoGenerate ? 'translate-x-4' : ''}`}></span>
+                  </button>
+                  <span className={toggleTextClass}>{useCouncilAutoGenerate ? '开启' : '关闭'}</span>
+                </div>
+              </div>
+              <div>
+                <label htmlFor="councilSystemPrompt" className="flex items-center text-sm font-medium mb-1 text-gray-700">
+                  <CaseSensitive size={16} className="mr-2 text-sky-600" />
+                  Council 默认系统提示词（用于 Cognito）
+                </label>
+                <textarea
+                  id="councilSystemPrompt"
+                  value={councilSystemPrompt}
+                  onChange={onCouncilPromptChange}
+                  rows={8}
+                  className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-sky-500 focus:border-sky-500 text-sm"
+                  placeholder="输入/编辑智慧委员会模式的系统提示词"
+                />
+                <div className="mt-2">
+                  <button onClick={onResetCouncilPrompt} className="px-2 py-1 text-xs bg-gray-100 text-gray-700 border border-gray-300 rounded hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-sky-500">
+                    <RotateCcw size={14} className="inline mr-1" /> 恢复默认
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Muse 在 Council 模式下会使用简化的“助手提示词”，避免在内部讨论阶段直接生成整份委员会输出。</p>
               </div>
             </div>
           </section>
