@@ -172,3 +172,14 @@ export const DEFAULT_OPENAI_MUSE_MODEL_ID = 'llama3'; // Placeholder
 // Chat history storage
 export const CHAT_HISTORY_STORAGE_KEY = 'dualAiChatHistoryV1';
 export const CURRENT_CONVERSATION_ID_STORAGE_KEY = 'dualAiChatCurrentConversationId';
+
+// UI/Settings persistence
+export const SELECTED_COGNITO_MODEL_API_NAME_STORAGE_KEY = 'dualAiChatSelectedCognitoModelApiName';
+export const SELECTED_MUSE_MODEL_API_NAME_STORAGE_KEY = 'dualAiChatSelectedMuseModelApiName';
+export const DISCUSSION_MODE_STORAGE_KEY = 'dualAiChatDiscussionMode'; // values: 'fixed' | 'ai-driven'
+export const MANUAL_FIXED_TURNS_STORAGE_KEY = 'dualAiChatManualFixedTurns';
+export const THINKING_BUDGET_ACTIVE_STORAGE_KEY = 'dualAiChatThinkingBudgetActive'; // 'true' | 'false'
+export const COGNITO_SYSTEM_PROMPT_STORAGE_KEY = 'dualAiChatCognitoSystemPrompt';
+export const MUSE_SYSTEM_PROMPT_STORAGE_KEY = 'dualAiChatMuseSystemPrompt';
+export const CHAT_PANEL_WIDTH_PERCENT_STORAGE_KEY = 'dualAiChatChatPanelWidthPercent';
+export const IS_NOTEPAD_FULLSCREEN_STORAGE_KEY = 'dualAiChatIsNotepadFullscreen';

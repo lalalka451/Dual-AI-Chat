@@ -99,6 +99,15 @@ export const useNotepadLogic = (initialContent: string) => {
     }
   }, [currentHistoryIndex, notepadHistory]);
 
+  // Clear undo/redo history but keep current content as the only entry
+  const clearNotepadHistory = useCallback(() => {
+    const current = notepadHistory[currentHistoryIndex] ?? notepadContent;
+    setNotepadHistory([current]);
+    setCurrentHistoryIndex(0);
+    setNotepadContent(current);
+    setLastNotepadUpdateBy(null);
+  }, [notepadHistory, currentHistoryIndex, notepadContent]);
+
   const canUndo = currentHistoryIndex > 0;
   const canRedo = currentHistoryIndex < notepadHistory.length - 1;
 
@@ -114,6 +123,7 @@ export const useNotepadLogic = (initialContent: string) => {
     // setNotepadContent is no longer exposed directly for external modification without history tracking
     undoNotepad,
     redoNotepad,
+    clearNotepadHistory,
     canUndo,
     canRedo,
   };

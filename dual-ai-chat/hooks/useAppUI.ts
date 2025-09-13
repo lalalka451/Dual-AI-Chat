@@ -1,12 +1,22 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { CHAT_PANEL_WIDTH_PERCENT_STORAGE_KEY, IS_NOTEPAD_FULLSCREEN_STORAGE_KEY } from '../constants';
 
 const MIN_PANEL_PERCENT = 20;
 const MAX_PANEL_PERCENT = 80;
 
 export const useAppUI = (initialChatPanelPercent: number, panelsContainerRef: React.RefObject<HTMLDivElement>) => {
-  const [isNotepadFullscreen, setIsNotepadFullscreen] = useState<boolean>(false);
-  const [chatPanelWidthPercent, setChatPanelWidthPercent] = useState<number>(initialChatPanelPercent);
+  const [isNotepadFullscreen, setIsNotepadFullscreen] = useState<boolean>(() => {
+    try { return localStorage.getItem(IS_NOTEPAD_FULLSCREEN_STORAGE_KEY) === 'true'; } catch { return false; }
+  });
+  const [chatPanelWidthPercent, setChatPanelWidthPercent] = useState<number>(() => {
+    try {
+      const raw = localStorage.getItem(CHAT_PANEL_WIDTH_PERCENT_STORAGE_KEY);
+      const val = raw !== null ? parseFloat(raw) : initialChatPanelPercent;
+      if (isNaN(val)) return initialChatPanelPercent;
+      return Math.max(MIN_PANEL_PERCENT, Math.min(MAX_PANEL_PERCENT, val));
+    } catch { return initialChatPanelPercent; }
+  });
   const [currentTotalProcessingTimeMs, setCurrentTotalProcessingTimeMs] = useState<number>(0);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
 
@@ -104,6 +114,15 @@ export const useAppUI = (initialChatPanelPercent: number, panelsContainerRef: Re
       document.removeEventListener('mouseup', handleMouseUpOnDocument);
     };
   }, [handleMouseMoveOnDocument, handleMouseUpOnDocument]);
+
+  // Persist UI state
+  useEffect(() => {
+    try { localStorage.setItem(IS_NOTEPAD_FULLSCREEN_STORAGE_KEY, isNotepadFullscreen.toString()); } catch {}
+  }, [isNotepadFullscreen]);
+
+  useEffect(() => {
+    try { localStorage.setItem(CHAT_PANEL_WIDTH_PERCENT_STORAGE_KEY, String(chatPanelWidthPercent)); } catch {}
+  }, [chatPanelWidthPercent]);
 
 
   return {

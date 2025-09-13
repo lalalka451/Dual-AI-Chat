@@ -7,32 +7,39 @@ import MessageBubble from './components/MessageBubble';
 import Notepad from './components/Notepad';
 import SettingsModal from './components/SettingsModal';
 import ChatHistoryModal from './components/ChatHistoryModal';
-import {
-  MODELS,
-  DEFAULT_COGNITO_MODEL_API_NAME, 
-  DEFAULT_MUSE_MODEL_API_NAME,    
-  COGNITO_SYSTEM_PROMPT_HEADER,
-  MUSE_SYSTEM_PROMPT_HEADER,
-  DEFAULT_MANUAL_FIXED_TURNS,
-  MIN_MANUAL_FIXED_TURNS,
-  INITIAL_NOTEPAD_CONTENT,
-  AiModel,
-  // Gemini Custom API Keys
-  CUSTOM_API_ENDPOINT_STORAGE_KEY,
-  CUSTOM_API_KEY_STORAGE_KEY,
-  USE_CUSTOM_API_CONFIG_STORAGE_KEY, 
-  // OpenAI Custom API Keys
-  USE_OPENAI_API_CONFIG_STORAGE_KEY,
-  OPENAI_API_BASE_URL_STORAGE_KEY,
-  OPENAI_API_KEY_STORAGE_KEY,
-  OPENAI_COGNITO_MODEL_ID_STORAGE_KEY,
-  OPENAI_MUSE_MODEL_ID_STORAGE_KEY,
-  DEFAULT_OPENAI_API_BASE_URL,
-  DEFAULT_OPENAI_COGNITO_MODEL_ID,
-  DEFAULT_OPENAI_MUSE_MODEL_ID,
-  CHAT_HISTORY_STORAGE_KEY,
-  CURRENT_CONVERSATION_ID_STORAGE_KEY,
-} from './constants';
+  import {
+    MODELS,
+    DEFAULT_COGNITO_MODEL_API_NAME, 
+    DEFAULT_MUSE_MODEL_API_NAME,    
+    COGNITO_SYSTEM_PROMPT_HEADER,
+    MUSE_SYSTEM_PROMPT_HEADER,
+    DEFAULT_MANUAL_FIXED_TURNS,
+    MIN_MANUAL_FIXED_TURNS,
+    INITIAL_NOTEPAD_CONTENT,
+    AiModel,
+    // Gemini Custom API Keys
+    CUSTOM_API_ENDPOINT_STORAGE_KEY,
+    CUSTOM_API_KEY_STORAGE_KEY,
+    USE_CUSTOM_API_CONFIG_STORAGE_KEY, 
+    // OpenAI Custom API Keys
+    USE_OPENAI_API_CONFIG_STORAGE_KEY,
+    OPENAI_API_BASE_URL_STORAGE_KEY,
+    OPENAI_API_KEY_STORAGE_KEY,
+    OPENAI_COGNITO_MODEL_ID_STORAGE_KEY,
+    OPENAI_MUSE_MODEL_ID_STORAGE_KEY,
+    DEFAULT_OPENAI_API_BASE_URL,
+    DEFAULT_OPENAI_COGNITO_MODEL_ID,
+    DEFAULT_OPENAI_MUSE_MODEL_ID,
+    CHAT_HISTORY_STORAGE_KEY,
+    CURRENT_CONVERSATION_ID_STORAGE_KEY,
+    SELECTED_COGNITO_MODEL_API_NAME_STORAGE_KEY,
+    SELECTED_MUSE_MODEL_API_NAME_STORAGE_KEY,
+    DISCUSSION_MODE_STORAGE_KEY,
+    MANUAL_FIXED_TURNS_STORAGE_KEY,
+    THINKING_BUDGET_ACTIVE_STORAGE_KEY,
+    COGNITO_SYSTEM_PROMPT_STORAGE_KEY,
+    MUSE_SYSTEM_PROMPT_STORAGE_KEY,
+  } from './constants';
 import { BotMessageSquare, AlertTriangle, RefreshCcw as RefreshCwIcon, Settings2, Brain, Sparkles, Database } from 'lucide-react'; 
 
 import { useChatLogic } from './hooks/useChatLogic';
@@ -91,13 +98,23 @@ const App: React.FC = () => {
   const [apiKeyStatus, setApiKeyStatus] = useState<ApiKeyStatus>({});
 
   // Settings State
-  const [selectedCognitoModelApiName, setSelectedCognitoModelApiName] = useState<string>(DEFAULT_COGNITO_MODEL_API_NAME);
-  const [selectedMuseModelApiName, setSelectedMuseModelApiName] = useState<string>(DEFAULT_MUSE_MODEL_API_NAME);
-  const [discussionMode, setDiscussionMode] = useState<DiscussionMode>(DiscussionMode.AiDriven);
-  const [manualFixedTurns, setManualFixedTurns] = useState<number>(DEFAULT_MANUAL_FIXED_TURNS);
-  const [isThinkingBudgetActive, setIsThinkingBudgetActive] = useState<boolean>(true); // Applicable to Gemini
-  const [cognitoSystemPrompt, setCognitoSystemPrompt] = useState<string>(COGNITO_SYSTEM_PROMPT_HEADER);
-  const [museSystemPrompt, setMuseSystemPrompt] = useState<string>(MUSE_SYSTEM_PROMPT_HEADER);
+  const [selectedCognitoModelApiName, setSelectedCognitoModelApiName] = useState<string>(() => localStorage.getItem(SELECTED_COGNITO_MODEL_API_NAME_STORAGE_KEY) || DEFAULT_COGNITO_MODEL_API_NAME);
+  const [selectedMuseModelApiName, setSelectedMuseModelApiName] = useState<string>(() => localStorage.getItem(SELECTED_MUSE_MODEL_API_NAME_STORAGE_KEY) || DEFAULT_MUSE_MODEL_API_NAME);
+  const [discussionMode, setDiscussionMode] = useState<DiscussionMode>(() => {
+    const v = localStorage.getItem(DISCUSSION_MODE_STORAGE_KEY);
+    return v === DiscussionMode.FixedTurns || v === DiscussionMode.AiDriven ? (v as DiscussionMode) : DiscussionMode.AiDriven;
+  });
+  const [manualFixedTurns, setManualFixedTurns] = useState<number>(() => {
+    const raw = localStorage.getItem(MANUAL_FIXED_TURNS_STORAGE_KEY);
+    const n = raw ? parseInt(raw, 10) : DEFAULT_MANUAL_FIXED_TURNS;
+    return isNaN(n) ? DEFAULT_MANUAL_FIXED_TURNS : Math.max(MIN_MANUAL_FIXED_TURNS, n);
+  });
+  const [isThinkingBudgetActive, setIsThinkingBudgetActive] = useState<boolean>(() => {
+    const v = localStorage.getItem(THINKING_BUDGET_ACTIVE_STORAGE_KEY);
+    return v ? v === 'true' : true;
+  }); // Applicable to Gemini
+  const [cognitoSystemPrompt, setCognitoSystemPrompt] = useState<string>(() => localStorage.getItem(COGNITO_SYSTEM_PROMPT_STORAGE_KEY) || COGNITO_SYSTEM_PROMPT_HEADER);
+  const [museSystemPrompt, setMuseSystemPrompt] = useState<string>(() => localStorage.getItem(MUSE_SYSTEM_PROMPT_STORAGE_KEY) || MUSE_SYSTEM_PROMPT_HEADER);
   const [fontSizeScale, setFontSizeScale] = useState<number>(() => {
     const storedScale = localStorage.getItem(FONT_SIZE_STORAGE_KEY);
     return storedScale ? parseFloat(storedScale) : DEFAULT_FONT_SIZE_SCALE;
@@ -136,6 +153,7 @@ const App: React.FC = () => {
     setNotepadHistoryFromExternal,
     undoNotepad,
     redoNotepad,
+    clearNotepadHistory,
     canUndo,
     canRedo,
   } = useNotepadLogic(INITIAL_NOTEPAD_CONTENT);
@@ -292,6 +310,15 @@ const App: React.FC = () => {
   useEffect(() => { localStorage.setItem(OPENAI_COGNITO_MODEL_ID_STORAGE_KEY, openAiCognitoModelId); }, [openAiCognitoModelId]);
   useEffect(() => { localStorage.setItem(OPENAI_MUSE_MODEL_ID_STORAGE_KEY, openAiMuseModelId); }, [openAiMuseModelId]);
 
+  // Persist general settings
+  useEffect(() => { try { localStorage.setItem(SELECTED_COGNITO_MODEL_API_NAME_STORAGE_KEY, selectedCognitoModelApiName); } catch {} }, [selectedCognitoModelApiName]);
+  useEffect(() => { try { localStorage.setItem(SELECTED_MUSE_MODEL_API_NAME_STORAGE_KEY, selectedMuseModelApiName); } catch {} }, [selectedMuseModelApiName]);
+  useEffect(() => { try { localStorage.setItem(DISCUSSION_MODE_STORAGE_KEY, discussionMode); } catch {} }, [discussionMode]);
+  useEffect(() => { try { localStorage.setItem(MANUAL_FIXED_TURNS_STORAGE_KEY, String(manualFixedTurns)); } catch {} }, [manualFixedTurns]);
+  useEffect(() => { try { localStorage.setItem(THINKING_BUDGET_ACTIVE_STORAGE_KEY, isThinkingBudgetActive.toString()); } catch {} }, [isThinkingBudgetActive]);
+  useEffect(() => { try { localStorage.setItem(COGNITO_SYSTEM_PROMPT_STORAGE_KEY, cognitoSystemPrompt); } catch {} }, [cognitoSystemPrompt]);
+  useEffect(() => { try { localStorage.setItem(MUSE_SYSTEM_PROMPT_STORAGE_KEY, museSystemPrompt); } catch {} }, [museSystemPrompt]);
+
 
   useEffect(() => {
     document.documentElement.style.fontSize = `${fontSizeScale * 100}%`;
@@ -311,7 +338,6 @@ const App: React.FC = () => {
   const initializeChat = useCallback(() => {
     setMessages([]);
     clearNotepadContent();
-    setIsNotepadFullscreen(false); 
     setIsAutoScrollEnabled(true);
     setApiKeyStatus({});
 
@@ -774,6 +800,7 @@ const App: React.FC = () => {
             onToggleFullscreen={toggleNotepadFullscreen}
             onUndo={undoNotepad}
             onRedo={redoNotepad}
+            onClearHistory={clearNotepadHistory}
             canUndo={canUndo}
             canRedo={canRedo}
           />
@@ -873,6 +900,21 @@ const App: React.FC = () => {
           }}
           onRenameConversation={(id, newTitle) => {
             setConversations(prev => prev.map(c => c.id === id ? { ...c, title: newTitle, updatedAt: new Date().toISOString() } : c));
+          }}
+          onImportConversations={(imported) => {
+            // Merge imported conversations. If IDs collide, regenerate new ones.
+            setConversations(prev => {
+              const existingIds = new Set(prev.map(c => c.id));
+              const normalized = imported.map((c) => {
+                let id = c.id;
+                if (existingIds.has(id)) {
+                  id = generateUniqueId();
+                }
+                return { ...c, id };
+              });
+              // Put imported at top, keep existing
+              return [...normalized, ...prev];
+            });
           }}
         />
       )}

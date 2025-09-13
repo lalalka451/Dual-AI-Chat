@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { MessageSender } from '../types';
-import { FileText, Eye, Code, Copy, Check, Maximize, Minimize, Undo2, Redo2 } from 'lucide-react';
+import { FileText, Eye, Code, Copy, Check, Maximize, Minimize, Undo2, Redo2, Eraser } from 'lucide-react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 
@@ -13,6 +13,7 @@ interface NotepadProps {
   onToggleFullscreen: () => void;
   onUndo: () => void;
   onRedo: () => void;
+  onClearHistory: () => void;
   canUndo: boolean;
   canRedo: boolean;
 }
@@ -25,6 +26,7 @@ const Notepad: React.FC<NotepadProps> = ({
   onToggleFullscreen,
   onUndo,
   onRedo,
+  onClearHistory,
   canUndo,
   canRedo
 }) => {
@@ -85,6 +87,16 @@ const Notepad: React.FC<NotepadProps> = ({
             aria-disabled={!canRedo || isLoading}
           >
             <Redo2 size={18} />
+          </button>
+          <div className="h-4 w-px bg-gray-300 mx-1" aria-hidden="true"></div>
+          <button
+            onClick={onClearHistory}
+            disabled={isLoading}
+            className={baseButtonClass}
+            title="清除记事本历史 (保留当前内容)"
+            aria-label="Clear notepad history"
+          >
+            <Eraser size={18} />
           </button>
           <div className="h-4 w-px bg-gray-300 mx-1" aria-hidden="true"></div>
           <button
