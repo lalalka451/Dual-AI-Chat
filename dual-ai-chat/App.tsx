@@ -46,6 +46,7 @@ import { useChatLogic } from './hooks/useChatLogic';
 import { useNotepadLogic } from './hooks/useNotepadLogic';
 import { useAppUI } from './hooks/useAppUI';
 import { generateUniqueId, getWelcomeMessageText, makeConversationTitleFromText } from './utils/appUtils';
+import { mergeConversations, safeParseConversations } from './utils/storageUtils';
 import { formatConversationAsJSON, formatConversationAsText, formatConversationAsHTML, downloadText, sanitizeFilename } from './utils/exportUtils';
 
 const DEFAULT_CHAT_PANEL_PERCENT = 60; 
@@ -208,6 +209,7 @@ const App: React.FC = () => {
           const now = new Date().toISOString();
           const preStored = messagesRef.current.map(m => ({ ...m, timestamp: m.timestamp.toISOString() })) as StoredChatMessage[];
           const allMsgs: StoredChatMessage[] = [...preStored, storeMsg];
+          const npId = generateUniqueId();
           updated = [
             {
               id: convId,
@@ -218,6 +220,8 @@ const App: React.FC = () => {
               notepad: notepadContentRef.current,
               notepadHistory: notepadHistoryRef.current,
               notepadHistoryIndex: notepadHistoryIndexRef.current,
+              notepads: [{ id: npId, title: 'Notebook', content: notepadContentRef.current, history: notepadHistoryRef.current, historyIndex: notepadHistoryIndexRef.current }],
+              activeNotepadId: npId,
             },
             ...prev,
           ];
@@ -236,8 +240,9 @@ const App: React.FC = () => {
         if (!found) {
           const now = new Date().toISOString();
           const preStored = messagesRef.current.map(m => ({ ...m, timestamp: m.timestamp.toISOString() })) as StoredChatMessage[];
+          const npId = generateUniqueId();
           updated = [
-            { id: convId!, title: sender === MessageSender.User ? makeConversationTitleFromText(text) : '新会话', createdAt: now, updatedAt: now, messages: [...preStored, storeMsg], notepad: notepadContentRef.current, notepadHistory: notepadHistoryRef.current, notepadHistoryIndex: notepadHistoryIndexRef.current },
+            { id: convId!, title: sender === MessageSender.User ? makeConversationTitleFromText(text) : '新会话', createdAt: now, updatedAt: now, messages: [...preStored, storeMsg], notepad: notepadContentRef.current, notepadHistory: notepadHistoryRef.current, notepadHistoryIndex: notepadHistoryIndexRef.current, notepads: [{ id: npId, title: 'Notebook', content: notepadContentRef.current, history: notepadHistoryRef.current, historyIndex: notepadHistoryIndexRef.current }], activeNotepadId: npId },
             ...updated,
           ];
         }
@@ -473,7 +478,16 @@ const App: React.FC = () => {
             setMessages(safeHydrateMessages((conv as any).messages));
             currentConversationIdRef.current = currentConversationId;
             // Restore notepad content
-            if (Array.isArray((conv as any).notepadHistory) && (conv as any).notepadHistory.length > 0) {
+            if (Array.isArray((conv as any).notepads) && (conv as any).notepads.length > 0) {
+              const pads = (conv as any).notepads as Array<{ id: string; content: string; history?: string[]; historyIndex?: number }>;
+              const activeId = (conv as any).activeNotepadId as string | undefined;
+              const active = activeId ? pads.find(p => p.id === activeId) : pads[0];
+              if (active && Array.isArray(active.history) && active.history.length > 0) {
+                setNotepadHistoryFromExternal(active.history, typeof active.historyIndex === 'number' ? active.historyIndex : active.history.length - 1);
+              } else {
+                setNotepadFromExternal(active?.content ?? conv.notepad ?? INITIAL_NOTEPAD_CONTENT);
+              }
+            } else if (Array.isArray((conv as any).notepadHistory) && (conv as any).notepadHistory.length > 0) {
               const hist = (conv as any).notepadHistory as string[];
               const idx = typeof (conv as any).notepadHistoryIndex === 'number' ? (conv as any).notepadHistoryIndex as number : hist.length - 1;
               setNotepadHistoryFromExternal(hist, idx);
@@ -493,8 +507,40 @@ const App: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [useCustomApiConfig, useOpenAiApiConfig]);
 
-  // Persist history and current conversation id
-  useEffect(() => { try { localStorage.setItem(CHAT_HISTORY_STORAGE_KEY, JSON.stringify(conversations)); } catch {} }, [conversations]);
+  // Persist history with merge to avoid overwriting other tabs; also listen for cross-tab updates
+  useEffect(() => {
+    try {
+      const existingRaw = localStorage.getItem(CHAT_HISTORY_STORAGE_KEY);
+      const existing = safeParseConversations(existingRaw);
+      const merged = mergeConversations(existing, conversations);
+      const existingStr = JSON.stringify(existing);
+      const mergedStr = JSON.stringify(merged);
+      if (existingStr !== mergedStr) {
+        localStorage.setItem(CHAT_HISTORY_STORAGE_KEY, mergedStr);
+      }
+      // Keep local state in sync if we merged in additional items
+      const localStr = JSON.stringify(conversations);
+      if (localStr !== mergedStr) {
+        setConversations(merged);
+      }
+    } catch {}
+  }, [conversations]);
+
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== CHAT_HISTORY_STORAGE_KEY) return;
+      try {
+        const incoming = safeParseConversations(e.newValue ?? null);
+        setConversations(prev => {
+          // If other tab has fewer items, it likely performed deletions; accept as authoritative.
+          if (incoming.length < prev.length) return incoming;
+          return mergeConversations(prev, incoming);
+        });
+      } catch {}
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
   useEffect(() => {
     if (currentConversationId) { try { localStorage.setItem(CURRENT_CONVERSATION_ID_STORAGE_KEY, currentConversationId); } catch {} }
     else { try { localStorage.removeItem(CURRENT_CONVERSATION_ID_STORAGE_KEY); } catch {} }
@@ -505,12 +551,29 @@ const App: React.FC = () => {
   useEffect(() => {
     const cid = currentConversationIdRef.current;
     if (!cid) return;
-    setConversations(prev => prev.map(c => c.id === cid ? { 
-      ...c, 
-      notepad: notepadContent,
-      notepadHistory: notepadHistory,
-      notepadHistoryIndex: currentNotepadHistoryIndex,
-    } : c));
+    setConversations(prev => prev.map(c => {
+      if (c.id !== cid) return c;
+      let pads = Array.isArray((c as any).notepads) ? [ ...(c as any).notepads as any[] ] : [];
+      let activeId: string | undefined = (c as any).activeNotepadId as any;
+      if (pads.length === 0) {
+        const newId = generateUniqueId();
+        pads = [{ id: newId, title: 'Notebook', content: notepadContent, history: notepadHistory, historyIndex: currentNotepadHistoryIndex }];
+        activeId = newId;
+      } else {
+        // Update active or first pad
+        let idx = activeId ? pads.findIndex(p => p.id === activeId) : 0;
+        if (idx < 0) idx = 0;
+        pads[idx] = { ...pads[idx], content: notepadContent, history: notepadHistory, historyIndex: currentNotepadHistoryIndex };
+      }
+      return {
+        ...c,
+        notepad: notepadContent,
+        notepadHistory: notepadHistory,
+        notepadHistoryIndex: currentNotepadHistoryIndex,
+        notepads: pads as any,
+        activeNotepadId: activeId,
+      };
+    }));
   }, [notepadContent, notepadHistory, currentNotepadHistoryIndex]);
 
    useEffect(() => {
@@ -955,7 +1018,16 @@ const App: React.FC = () => {
               setCurrentConversationId(id);
               currentConversationIdRef.current = id;
               setMessages(safeHydrateMessages((conv as any).messages));
-              if (Array.isArray((conv as any).notepadHistory) && (conv as any).notepadHistory.length > 0) {
+              if (Array.isArray((conv as any).notepads) && (conv as any).notepads.length > 0) {
+                const pads = (conv as any).notepads as Array<{ id: string; content: string; history?: string[]; historyIndex?: number }>;
+                const activeId = (conv as any).activeNotepadId as string | undefined;
+                const active = activeId ? pads.find(p => p.id === activeId) : pads[0];
+                if (active && Array.isArray(active.history) && active.history.length > 0) {
+                  setNotepadHistoryFromExternal(active.history, typeof active.historyIndex === 'number' ? active.historyIndex : active.history.length - 1);
+                } else {
+                  setNotepadFromExternal(active?.content ?? conv.notepad ?? INITIAL_NOTEPAD_CONTENT);
+                }
+              } else if (Array.isArray((conv as any).notepadHistory) && (conv as any).notepadHistory.length > 0) {
                 const hist = (conv as any).notepadHistory as string[];
                 const idx = typeof (conv as any).notepadHistoryIndex === 'number' ? (conv as any).notepadHistoryIndex as number : hist.length - 1;
                 setNotepadHistoryFromExternal(hist, idx);

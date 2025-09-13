@@ -44,6 +44,17 @@ export interface ChatConversation {
   // Persisted notepad history for undo/redo across sessions
   notepadHistory?: string[];
   notepadHistoryIndex?: number; // current index within notepadHistory
+  // Support multiple notebooks per conversation
+  notepads?: ConversationNotepad[];
+  activeNotepadId?: string;
+}
+
+export interface ConversationNotepad {
+  id: string;
+  title?: string;
+  content: string;
+  history?: string[];
+  historyIndex?: number;
 }
 
 // Updated types for structured notepad modifications based on HTML-like tags

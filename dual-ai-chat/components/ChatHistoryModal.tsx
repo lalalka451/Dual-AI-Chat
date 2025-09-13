@@ -124,6 +124,14 @@ const ChatHistoryModal: React.FC<ChatHistoryModalProps> = ({
             const notepad = typeof raw.notepad === 'string' ? raw.notepad : '';
             const notepadHistory = Array.isArray(raw.notepadHistory) ? raw.notepadHistory.map((x: any) => String(x)) : undefined;
             const notepadHistoryIndex = typeof raw.notepadHistoryIndex === 'number' ? raw.notepadHistoryIndex : (notepadHistory ? notepadHistory.length - 1 : undefined);
+            const notepads = Array.isArray(raw.notepads) ? raw.notepads.map((p: any) => ({
+              id: String(p.id || `${Math.random().toString(36).slice(2)}`),
+              title: typeof p.title === 'string' ? p.title : undefined,
+              content: String(p.content || ''),
+              history: Array.isArray(p.history) ? p.history.map((x: any) => String(x)) : undefined,
+              historyIndex: typeof p.historyIndex === 'number' ? p.historyIndex : (Array.isArray(p.history) ? p.history.length - 1 : undefined),
+            })) : undefined;
+            const activeNotepadId = typeof raw.activeNotepadId === 'string' ? raw.activeNotepadId : undefined;
             const messages = Array.isArray(raw.messages) ? raw.messages.map((m: any) => ({
               id: String(m.id || `${Math.random().toString(36).slice(2)}`),
               text: String(m.text || ''),
@@ -134,7 +142,7 @@ const ChatHistoryModal: React.FC<ChatHistoryModalProps> = ({
               image: m.image && m.image.dataUrl ? { dataUrl: String(m.image.dataUrl), name: String(m.image.name || ''), type: String(m.image.type || '') } : undefined,
               textAttachment: m.textAttachment && m.textAttachment.content ? { name: String(m.textAttachment.name || '附件.txt'), content: String(m.textAttachment.content) } : undefined,
             })) : [];
-            return { id, title, createdAt, updatedAt, messages, notepad, notepadHistory, notepadHistoryIndex } as ChatConversation;
+            return { id, title, createdAt, updatedAt, messages, notepad, notepadHistory, notepadHistoryIndex, notepads, activeNotepadId } as ChatConversation;
           } catch {
             return null;
           }

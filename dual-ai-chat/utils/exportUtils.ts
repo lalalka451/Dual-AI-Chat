@@ -31,11 +31,24 @@ export const formatConversationAsText = (conv: ChatConversation): string => {
     lines.push(formatMessageLine(m));
     lines.push('');
   });
-  lines.push('--- 记事本 (当前) ---');
-  lines.push(conv.notepad ?? '');
-  if (conv.notepadHistory && conv.notepadHistory.length > 0) {
-    lines.push('');
-    lines.push(`(记事本历史共 ${conv.notepadHistory.length} 个状态，当前索引 ${typeof conv.notepadHistoryIndex === 'number' ? conv.notepadHistoryIndex : conv.notepadHistory.length - 1})`);
+  const pads = Array.isArray((conv as any).notepads) ? (conv as any).notepads as Array<{ id: string; title?: string; content: string; history?: string[]; historyIndex?: number }> : [];
+  if (pads.length > 0) {
+    lines.push('--- 记事本集合 ---');
+    pads.forEach((p, i) => {
+      lines.push(`## 记事本 ${i + 1}${p.title ? `: ${p.title}` : ''}`);
+      lines.push(p.content ?? '');
+      if (p.history && p.history.length) {
+        lines.push(`(历史共 ${p.history.length} 个状态，当前索引 ${typeof p.historyIndex === 'number' ? p.historyIndex : p.history.length - 1})`);
+      }
+      lines.push('');
+    });
+  } else {
+    lines.push('--- 记事本 (当前) ---');
+    lines.push(conv.notepad ?? '');
+    if (conv.notepadHistory && conv.notepadHistory.length > 0) {
+      lines.push('');
+      lines.push(`(记事本历史共 ${conv.notepadHistory.length} 个状态，当前索引 ${typeof conv.notepadHistoryIndex === 'number' ? conv.notepadHistoryIndex : conv.notepadHistory.length - 1})`);
+    }
   }
   return lines.join('\n');
 };
@@ -66,9 +79,12 @@ export const formatConversationAsHTML = (conv: ChatConversation): string => {
     return `<div class="message"><div class="header">[${escapeHtml(ts)}] ${escapeHtml(meta)}</div><pre>${escapeHtml(m.text)}</pre>${attachment}${image}</div>`;
   }).join('\n');
 
-  const notepadSection = `<section class="notepad"><h3>记事本 (当前)</h3><pre>${escapeHtml(conv.notepad ?? '')}</pre>${conv.notepadHistory && conv.notepadHistory.length > 0
-    ? `<div class="meta">记事本历史共 ${conv.notepadHistory.length} 个状态，当前索引 ${typeof conv.notepadHistoryIndex === 'number' ? conv.notepadHistoryIndex : conv.notepadHistory.length - 1}</div>`
-    : ''}</section>`;
+  const pads = Array.isArray((conv as any).notepads) ? (conv as any).notepads as Array<{ id: string; title?: string; content: string; history?: string[]; historyIndex?: number }> : [];
+  const notepadSection = pads.length > 0
+    ? `<section class="notepad"><h3>记事本集合</h3>${pads.map((p, i) => `<h4>记事本 ${i + 1}${p.title ? `: ${escapeHtml(p.title)}` : ''}</h4><pre>${escapeHtml(p.content ?? '')}</pre>${p.history && p.history.length ? `<div class="meta">历史共 ${p.history.length} 个状态，当前索引 ${typeof p.historyIndex === 'number' ? p.historyIndex : p.history.length - 1}</div>` : ''}`).join('')}</section>`
+    : `<section class="notepad"><h3>记事本 (当前)</h3><pre>${escapeHtml(conv.notepad ?? '')}</pre>${conv.notepadHistory && conv.notepadHistory.length > 0
+      ? `<div class="meta">记事本历史共 ${conv.notepadHistory.length} 个状态，当前索引 ${typeof conv.notepadHistoryIndex === 'number' ? conv.notepadHistoryIndex : conv.notepadHistory.length - 1}</div>`
+      : ''}</section>`;
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -154,4 +170,3 @@ export const downloadText = (filename: string, mime: string, content: string) =>
     URL.revokeObjectURL(url);
   }, 0);
 };
-
