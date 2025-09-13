@@ -586,8 +586,6 @@ const App: React.FC = () => {
       initializeChat();
       return;
     }
-    // Re-init on API config mode changes
-    initializeChat();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [useCustomApiConfig, useOpenAiApiConfig]);
 
@@ -656,6 +654,7 @@ const App: React.FC = () => {
         notepadHistoryIndex: currentNotepadHistoryIndex,
         notepads: pads as any,
         activeNotepadId: activeId,
+        updatedAt: new Date().toISOString(),
       };
     }));
   }, [notepadContent, notepadHistory, currentNotepadHistoryIndex]);
