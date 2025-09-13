@@ -154,6 +154,7 @@ const App: React.FC = () => {
     currentHistoryIndex: currentNotepadHistoryIndex,
     processNotepadUpdateFromAI,
     clearNotepadContent,
+    setNotepadFromExternal,
     setNotepadHistoryFromExternal,
     undoNotepad,
     redoNotepad,
@@ -173,6 +174,89 @@ const App: React.FC = () => {
   // Keep a ref of messages to include pre-user messages when creating a conversation
   const messagesRef = useRef<ChatMessage[]>([]);
   useEffect(() => { messagesRef.current = messages; }, [messages]);
+
+  // Helpers to access current conversation and pads
+  const currentConversation = useMemo(() => conversations.find(c => c.id === currentConversationId) || null, [conversations, currentConversationId]);
+  const currentPads = currentConversation && Array.isArray((currentConversation as any).notepads)
+    ? (currentConversation as any).notepads as Array<{ id: string; title?: string; content: string; history?: string[]; historyIndex?: number }>
+    : [];
+  const activePadId: string | undefined = currentConversation ? (currentConversation as any).activeNotepadId : undefined;
+
+  const selectNotepad = useCallback((id: string) => {
+    const cid = currentConversationIdRef.current;
+    if (!cid) return;
+    const conv = conversations.find(c => c.id === cid);
+    if (!conv) return;
+    const pads = Array.isArray((conv as any).notepads) ? (conv as any).notepads as any[] : [];
+    const pad = pads.find(p => p.id === id);
+    if (!pad) return;
+    setConversations(prev => prev.map(c => c.id === cid ? { ...c, activeNotepadId: id, updatedAt: new Date().toISOString() } : c));
+    if (pad.history && pad.history.length) {
+      setNotepadHistoryFromExternal(pad.history, typeof pad.historyIndex === 'number' ? pad.historyIndex : pad.history.length - 1);
+    } else {
+      setNotepadFromExternal(pad.content || '');
+    }
+  }, [conversations, setNotepadFromExternal, setNotepadHistoryFromExternal]);
+
+  const addNotepad = useCallback(() => {
+    const cid = currentConversationIdRef.current;
+    if (!cid) return;
+    const newId = generateUniqueId();
+    setConversations(prev => prev.map(c => {
+      if (c.id !== cid) return c;
+      const pads = Array.isArray((c as any).notepads) ? [ ...(c as any).notepads as any[] ] : [];
+      const title = `Notebook ${pads.length + 1}`;
+      const newPad = { id: newId, title, content: INITIAL_NOTEPAD_CONTENT, history: [INITIAL_NOTEPAD_CONTENT], historyIndex: 0 };
+      return { ...c, notepads: [...pads, newPad], activeNotepadId: newId, updatedAt: new Date().toISOString() } as any;
+    }));
+    setNotepadHistoryFromExternal([INITIAL_NOTEPAD_CONTENT], 0);
+  }, [setNotepadHistoryFromExternal]);
+
+  const renameNotepad = useCallback((id: string) => {
+    const cid = currentConversationIdRef.current;
+    if (!cid) return;
+    const conv = conversations.find(c => c.id === cid);
+    const pads = conv && Array.isArray((conv as any).notepads) ? (conv as any).notepads as any[] : [];
+    const pad = pads.find(p => p.id === id);
+    const currentTitle = pad?.title || '';
+    // Simple prompt to rename
+    const newTitle = window.prompt('重命名记事本', currentTitle);
+    if (newTitle === null) return;
+    const finalTitle = newTitle.trim();
+    setConversations(prev => prev.map(c => {
+      if (c.id !== cid) return c;
+      const ps = Array.isArray((c as any).notepads) ? [ ...(c as any).notepads as any[] ] : [];
+      const idx = ps.findIndex((p: any) => p.id === id);
+      if (idx >= 0) ps[idx] = { ...ps[idx], title: finalTitle || ps[idx].title };
+      return { ...c, notepads: ps, updatedAt: new Date().toISOString() } as any;
+    }));
+  }, [conversations]);
+
+  const deleteNotepad = useCallback((id: string) => {
+    const cid = currentConversationIdRef.current;
+    if (!cid) return;
+    const conv = conversations.find(c => c.id === cid);
+    if (!conv) return;
+    const pads = Array.isArray((conv as any).notepads) ? (conv as any).notepads as any[] : [];
+    if (pads.length <= 1) {
+      // Keep one pad: reset it instead of removing
+      const resetPad = { ...pads[0], content: INITIAL_NOTEPAD_CONTENT, history: [INITIAL_NOTEPAD_CONTENT], historyIndex: 0 };
+      setConversations(prev => prev.map(c => c.id === cid ? { ...c, notepads: [resetPad], activeNotepadId: resetPad.id, updatedAt: new Date().toISOString() } as any : c));
+      setNotepadHistoryFromExternal([INITIAL_NOTEPAD_CONTENT], 0);
+      return;
+    }
+    let nextActiveId = (conv as any).activeNotepadId as string | undefined;
+    if (nextActiveId === id) {
+      const remain = pads.filter((p: any) => p.id !== id);
+      nextActiveId = remain[0]?.id;
+      const active = remain[0];
+      if (active) {
+        if (active.history && active.history.length) setNotepadHistoryFromExternal(active.history, typeof active.historyIndex === 'number' ? active.historyIndex : active.history.length - 1);
+        else setNotepadFromExternal(active.content || '');
+      }
+    }
+    setConversations(prev => prev.map(c => c.id === cid ? { ...c, notepads: pads.filter((p: any) => p.id !== id), activeNotepadId: nextActiveId, updatedAt: new Date().toISOString() } as any : c));
+  }, [conversations, setNotepadFromExternal, setNotepadHistoryFromExternal]);
 
   const addMessage = useCallback((
     text: string,
@@ -948,6 +1032,12 @@ const App: React.FC = () => {
             onClearHistory={clearNotepadHistory}
             canUndo={canUndo}
             canRedo={canRedo}
+            notepads={currentPads.map(p => ({ id: p.id, title: p.title }))}
+            activeNotepadId={activePadId || (currentPads[0]?.id)}
+            onSelectNotepad={selectNotepad}
+            onAddNotepad={addNotepad}
+            onRenameNotepad={renameNotepad}
+            onDeleteNotepad={deleteNotepad}
           />
         </div>
       </div>
