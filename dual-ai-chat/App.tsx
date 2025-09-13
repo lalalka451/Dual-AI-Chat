@@ -40,12 +40,13 @@ import ChatHistoryModal from './components/ChatHistoryModal';
     COGNITO_SYSTEM_PROMPT_STORAGE_KEY,
     MUSE_SYSTEM_PROMPT_STORAGE_KEY,
   } from './constants';
-import { BotMessageSquare, AlertTriangle, RefreshCcw as RefreshCwIcon, Settings2, Brain, Sparkles, Database } from 'lucide-react'; 
+import { BotMessageSquare, AlertTriangle, RefreshCcw as RefreshCwIcon, Settings2, Brain, Sparkles, Database, Download } from 'lucide-react'; 
 
 import { useChatLogic } from './hooks/useChatLogic';
 import { useNotepadLogic } from './hooks/useNotepadLogic';
 import { useAppUI } from './hooks/useAppUI';
 import { generateUniqueId, getWelcomeMessageText, makeConversationTitleFromText } from './utils/appUtils';
+import { formatConversationAsJSON, formatConversationAsText, formatConversationAsHTML, downloadText, sanitizeFilename } from './utils/exportUtils';
 
 const DEFAULT_CHAT_PANEL_PERCENT = 60; 
 const FONT_SIZE_STORAGE_KEY = 'dualAiChatFontSizeScale';
@@ -123,6 +124,8 @@ const App: React.FC = () => {
   const panelsContainerRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState<boolean>(true);
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState<boolean>(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
 
 
   const {
@@ -334,6 +337,54 @@ const App: React.FC = () => {
       return !(process.env.API_KEY && process.env.API_KEY.trim() !== "");
     }
   }, [useCustomApiConfig, customApiKey, useOpenAiApiConfig, openAiApiBaseUrl, openAiApiKey, openAiCognitoModelId, openAiMuseModelId]);
+
+  // Close export menu on outside click or Esc
+  useEffect(() => {
+    if (!isExportMenuOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      const el = exportMenuRef.current;
+      if (el && !el.contains(e.target as Node)) {
+        setIsExportMenuOpen(false);
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsExportMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [isExportMenuOpen]);
+
+  type ExportFormat = 'json' | 'txt' | 'html';
+  const exportCurrentConversation = useCallback((format: ExportFormat) => {
+    const cid = currentConversationIdRef.current;
+    if (!cid) {
+      alert('当前没有活动会话可导出');
+      return;
+    }
+    const conv = conversations.find(c => c.id === cid);
+    if (!conv) {
+      alert('未找到当前会话');
+      return;
+    }
+    const base = sanitizeFilename(conv.title || 'conversation');
+    const suffix = conv.id ? `_${conv.id.slice(-6)}` : '';
+    const d = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const stamp = `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
+    const filename = `${base}${suffix}_${stamp}.${format}`;
+    if (format === 'json') {
+      downloadText(filename, 'application/json', formatConversationAsJSON(conv));
+    } else if (format === 'txt') {
+      downloadText(filename, 'text/plain', formatConversationAsText(conv));
+    } else {
+      downloadText(filename, 'text/html', formatConversationAsHTML(conv));
+    }
+    setIsExportMenuOpen(false);
+  }, [conversations]);
 
   const initializeChat = useCallback(() => {
     setMessages([]);
@@ -696,6 +747,23 @@ const App: React.FC = () => {
           >
             <Database size={20} />
           </button>
+          <div className="relative" ref={exportMenuRef}>
+            <button
+              onClick={() => setIsExportMenuOpen(v => !v)}
+              className="p-1.5 md:p-2 text-gray-500 hover:text-emerald-600 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 focus:ring-offset-gray-50 rounded-md shrink-0 disabled:opacity-70 disabled:cursor-not-allowed"
+              aria-label="导出当前会话" title="导出当前会话"
+              disabled={isLoading && !cancelRequestRef.current && !failedStepInfo}
+            >
+              <Download size={20} />
+            </button>
+            {isExportMenuOpen && (
+              <div className="absolute right-0 mt-1 w-32 bg-white border border-gray-300 rounded-md shadow-lg z-50">
+                <button onClick={() => exportCurrentConversation('json')} className="block w-full text-left px-3 py-1.5 text-sm hover:bg-gray-100">导出 JSON</button>
+                <button onClick={() => exportCurrentConversation('txt')} className="block w-full text-left px-3 py-1.5 text-sm hover:bg-gray-100">导出 TXT</button>
+                <button onClick={() => exportCurrentConversation('html')} className="block w-full text-left px-3 py-1.5 text-sm hover:bg-gray-100">导出 HTML</button>
+              </div>
+            )}
+          </div>
           <button onClick={handleClearChat}
             className="p-1.5 md:p-2 text-gray-500 hover:text-sky-600 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-gray-50 rounded-md shrink-0 disabled:opacity-70 disabled:cursor-not-allowed"
             aria-label="清空会话" title="清空会话" disabled={isLoading && !cancelRequestRef.current && !failedStepInfo}
