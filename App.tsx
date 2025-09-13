@@ -63,6 +63,9 @@ const App: React.FC = () => {
   });
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(() => localStorage.getItem(CURRENT_CONVERSATION_ID_STORAGE_KEY));
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState<boolean>(false);
+  const currentConversationIdRef = useRef<string | null>(
+    typeof window !== 'undefined' ? localStorage.getItem(CURRENT_CONVERSATION_ID_STORAGE_KEY) : null
+  );
   
   // Gemini Custom API Config State
   const [useCustomApiConfig, setUseCustomApiConfig] = useState<boolean>(() => {
@@ -156,10 +159,11 @@ const App: React.FC = () => {
     // Persist to conversation history
     setConversations(prev => {
       const storeMsg: StoredChatMessage = { ...message, timestamp: message.timestamp.toISOString() };
-      let convId = currentConversationId;
+      let convId = currentConversationIdRef.current;
       let updated = prev;
       if (!convId) {
         convId = generateUniqueId();
+        currentConversationIdRef.current = convId;
         setCurrentConversationId(convId);
         const now = new Date().toISOString();
         updated = [
@@ -338,6 +342,7 @@ const App: React.FC = () => {
         const conv = conversations.find(c => c.id === currentConversationId);
         if (conv) {
           setMessages(conv.messages.map(m => ({ ...m, timestamp: new Date(m.timestamp) })));
+          currentConversationIdRef.current = currentConversationId;
           return;
         }
       }
@@ -354,6 +359,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (currentConversationId) { try { localStorage.setItem(CURRENT_CONVERSATION_ID_STORAGE_KEY, currentConversationId); } catch {} }
     else { try { localStorage.removeItem(CURRENT_CONVERSATION_ID_STORAGE_KEY); } catch {} }
+    currentConversationIdRef.current = currentConversationId;
   }, [currentConversationId]);
 
    useEffect(() => {
@@ -403,6 +409,7 @@ const App: React.FC = () => {
     // Reset to a fresh conversation (id created on first message)
     setMessages([]);
     setCurrentConversationId(null);
+    currentConversationIdRef.current = null;
     clearNotepadContent();
     setIsNotepadFullscreen(false);
     setIsAutoScrollEnabled(true);
@@ -775,6 +782,7 @@ const App: React.FC = () => {
             const conv = conversations.find(c => c.id === id);
             if (conv) {
               setCurrentConversationId(id);
+              currentConversationIdRef.current = id;
               setMessages(conv.messages.map(m => ({ ...m, timestamp: new Date(m.timestamp) })));
               setIsHistoryModalOpen(false);
             }
@@ -783,12 +791,14 @@ const App: React.FC = () => {
             setConversations(prev => prev.filter(c => c.id !== id));
             if (currentConversationId === id) {
               setCurrentConversationId(null);
+              currentConversationIdRef.current = null;
               setMessages([]);
             }
           }}
           onDeleteAll={() => {
             setConversations([]);
             setCurrentConversationId(null);
+            currentConversationIdRef.current = null;
             setMessages([]);
           }}
           onRenameConversation={(id, newTitle) => {
