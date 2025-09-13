@@ -67,6 +67,20 @@ export const useNotepadLogic = (initialContent: string) => {
     setLastNotepadUpdateBy(null);
   }, []);
 
+  // Allow external restoration of full history (for persisted undo/redo)
+  const setNotepadHistoryFromExternal = useCallback((history: string[], index?: number) => {
+    const safeHistory = Array.isArray(history) && history.length > 0 ? history.slice() : [initialContent];
+    const maxIdx = safeHistory.length - 1;
+    let targetIdx = typeof index === 'number' ? index : maxIdx;
+    if (targetIdx < 0) targetIdx = 0;
+    if (targetIdx > maxIdx) targetIdx = maxIdx;
+
+    setNotepadHistory(safeHistory);
+    setCurrentHistoryIndex(targetIdx);
+    setNotepadContent(safeHistory[targetIdx]);
+    setLastNotepadUpdateBy(null);
+  }, [initialContent]);
+
   const undoNotepad = useCallback(() => {
     if (currentHistoryIndex > 0) {
       const newIndex = currentHistoryIndex - 1;
@@ -91,9 +105,12 @@ export const useNotepadLogic = (initialContent: string) => {
   return {
     notepadContent,
     lastNotepadUpdateBy,
+    notepadHistory,
+    currentHistoryIndex,
     processNotepadUpdateFromAI,
     clearNotepadContent,
     setNotepadFromExternal,
+    setNotepadHistoryFromExternal,
     // setNotepadContent is no longer exposed directly for external modification without history tracking
     undoNotepad,
     redoNotepad,

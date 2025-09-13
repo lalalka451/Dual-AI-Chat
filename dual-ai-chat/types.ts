@@ -41,6 +41,9 @@ export interface ChatConversation {
   updatedAt: string; // ISO string
   messages: StoredChatMessage[];
   notepad?: string; // Persisted notepad content for this conversation
+  // Persisted notepad history for undo/redo across sessions
+  notepadHistory?: string[];
+  notepadHistoryIndex?: number; // current index within notepadHistory
 }
 
 // Updated types for structured notepad modifications based on HTML-like tags

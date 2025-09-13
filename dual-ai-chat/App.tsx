@@ -129,8 +129,11 @@ const App: React.FC = () => {
   const {
     notepadContent,
     lastNotepadUpdateBy,
+    notepadHistory,
+    currentHistoryIndex: currentNotepadHistoryIndex,
     processNotepadUpdateFromAI,
     clearNotepadContent,
+    setNotepadHistoryFromExternal,
     undoNotepad,
     redoNotepad,
     canUndo,
@@ -140,6 +143,11 @@ const App: React.FC = () => {
   // Keep a ref of notepad content for consistent persistence in callbacks
   const notepadContentRef = useRef<string>(INITIAL_NOTEPAD_CONTENT);
   useEffect(() => { notepadContentRef.current = notepadContent; }, [notepadContent]);
+  // Keep refs for notepad history persistence inside stable callbacks
+  const notepadHistoryRef = useRef<string[]>([INITIAL_NOTEPAD_CONTENT]);
+  const notepadHistoryIndexRef = useRef<number>(0);
+  useEffect(() => { notepadHistoryRef.current = notepadHistory; }, [notepadHistory]);
+  useEffect(() => { notepadHistoryIndexRef.current = currentNotepadHistoryIndex; }, [currentNotepadHistoryIndex]);
 
   const addMessage = useCallback((
     text: string,
@@ -180,6 +188,8 @@ const App: React.FC = () => {
             updatedAt: now,
             messages: [storeMsg],
             notepad: notepadContentRef.current,
+            notepadHistory: notepadHistoryRef.current,
+            notepadHistoryIndex: notepadHistoryIndexRef.current,
           },
           ...prev,
         ];
@@ -194,7 +204,7 @@ const App: React.FC = () => {
         if (!found) {
           const now = new Date().toISOString();
           updated = [
-            { id: convId, title: sender === MessageSender.User ? makeConversationTitleFromText(text) : '新会话', createdAt: now, updatedAt: now, messages: [storeMsg], notepad: notepadContentRef.current },
+            { id: convId, title: sender === MessageSender.User ? makeConversationTitleFromText(text) : '新会话', createdAt: now, updatedAt: now, messages: [storeMsg], notepad: notepadContentRef.current, notepadHistory: notepadHistoryRef.current, notepadHistoryIndex: notepadHistoryIndexRef.current },
             ...updated,
           ];
         }
@@ -374,8 +384,14 @@ const App: React.FC = () => {
             setMessages(safeHydrateMessages((conv as any).messages));
             currentConversationIdRef.current = currentConversationId;
             // Restore notepad content
-            const restored = conv.notepad ?? INITIAL_NOTEPAD_CONTENT;
-            setNotepadFromExternal(restored);
+            if (Array.isArray((conv as any).notepadHistory) && (conv as any).notepadHistory.length > 0) {
+              const hist = (conv as any).notepadHistory as string[];
+              const idx = typeof (conv as any).notepadHistoryIndex === 'number' ? (conv as any).notepadHistoryIndex as number : hist.length - 1;
+              setNotepadHistoryFromExternal(hist, idx);
+            } else {
+              const restored = conv.notepad ?? INITIAL_NOTEPAD_CONTENT;
+              setNotepadFromExternal(restored);
+            }
             return;
           }
         } catch {}
@@ -400,8 +416,13 @@ const App: React.FC = () => {
   useEffect(() => {
     const cid = currentConversationIdRef.current;
     if (!cid) return;
-    setConversations(prev => prev.map(c => c.id === cid ? { ...c, notepad: notepadContent } : c));
-  }, [notepadContent]);
+    setConversations(prev => prev.map(c => c.id === cid ? { 
+      ...c, 
+      notepad: notepadContent,
+      notepadHistory: notepadHistory,
+      notepadHistoryIndex: currentNotepadHistoryIndex,
+    } : c));
+  }, [notepadContent, notepadHistory, currentNotepadHistoryIndex]);
 
    useEffect(() => {
      const welcomeMessage = messages.find(msg => msg.sender === MessageSender.System && msg.text.startsWith("欢迎使用Dual AI Chat！"));
@@ -825,8 +846,14 @@ const App: React.FC = () => {
               setCurrentConversationId(id);
               currentConversationIdRef.current = id;
               setMessages(safeHydrateMessages((conv as any).messages));
-              const restored = conv.notepad ?? INITIAL_NOTEPAD_CONTENT;
-              setNotepadFromExternal(restored);
+              if (Array.isArray((conv as any).notepadHistory) && (conv as any).notepadHistory.length > 0) {
+                const hist = (conv as any).notepadHistory as string[];
+                const idx = typeof (conv as any).notepadHistoryIndex === 'number' ? (conv as any).notepadHistoryIndex as number : hist.length - 1;
+                setNotepadHistoryFromExternal(hist, idx);
+              } else {
+                const restored = conv.notepad ?? INITIAL_NOTEPAD_CONTENT;
+                setNotepadFromExternal(restored);
+              }
               setIsHistoryModalOpen(false);
             }
           }}
