@@ -18,7 +18,14 @@ import {
 import { parseAIResponse, fileToBase64, ParsedAIResponse, formatNotepadContentForAI } from '../utils/appUtils';
 
 interface UseChatLogicProps {
-  addMessage: (text: string, sender: MessageSender, purpose: MessagePurpose, durationMs?: number, image?: ChatMessage['image']) => string;
+  addMessage: (
+    text: string,
+    sender: MessageSender,
+    purpose: MessagePurpose,
+    durationMs?: number,
+    image?: ChatMessage['image'],
+    textAttachment?: ChatMessage['textAttachment']
+  ) => string;
   processNotepadUpdateFromAI: (parsedResponse: ParsedAIResponse, sender: MessageSender, addSystemMessage: UseChatLogicProps['addMessage']) => void;
   setGlobalApiKeyStatus: (status: {isMissing?: boolean, isInvalid?: boolean, message?: string}) => void;
   
@@ -104,7 +111,8 @@ export const useChatLogic = ({
     imageApiPartForFlowContext?: { inlineData: { mimeType: string; data: string } }, 
     discussionLogBeforeFailureContext?: string[],
     currentTurnIndexForResumeContext?: number,
-    previousAISignaledStopForResumeContext?: boolean
+    previousAISignaledStopForResumeContext?: boolean,
+    textAttachmentForFlowContext?: { name: string; content: string }
   ): Promise<ParsedAIResponse> => {
     let stepSuccess = false;
     let parsedResponse: ParsedAIResponse | null = null;
@@ -191,6 +199,7 @@ export const useChatLogic = ({
             thinkingConfig: thinkingConfigForPayload,
             userInputForFlow: userInputForFlowContext || "", 
             imageApiPartForFlow: imageApiPartForFlowContext,
+            textAttachmentForFlow: textAttachmentForFlowContext,
             discussionLogBeforeFailure: discussionLogBeforeFailureContext || [], 
             currentTurnIndexForResume: currentTurnIndexForResumeContext,
             previousAISignaledStopForResume: previousAISignaledStopForResumeContext
@@ -292,12 +301,19 @@ export const useChatLogic = ({
           if (!(skipMuseInFirstIteration && turn === initialLoopTurn)) {
             const museStepIdentifier = `muse-reply-to-cognito-turn-${turn}`;
             addMessage(`${MessageSender.Muse} 正在回应 ${MessageSender.Cognito} (使用 ${effectiveMuseModel.name})...`, MessageSender.System, MessagePurpose.SystemNotification);
-            let musePromptText = `用户的查询 (中文) 是: "${userInputForFlow}". ${imageInstructionForAI} 当前讨论 (均为中文):\n${localDiscussionLog.join("\n")}\n${MessageSender.Cognito} (逻辑AI) 刚刚说 (中文): "${localLastTurnTextForLog}". 请回复 ${MessageSender.Cognito}。继续讨论。保持您的回复简洁并使用中文。\n${commonPromptInstructions()}`;
+            const textAttachmentInstructionForAI = retriedStepPayload.textAttachmentForFlow ? (() => {
+              const MAX = 6000;
+              const content = retriedStepPayload.textAttachmentForFlow!.content || '';
+              const snippet = content.length > MAX ? content.slice(0, MAX) + "\n…(附件已截断)" : content;
+              return `用户还提供了一个文本附件 \"${retriedStepPayload.textAttachmentForFlow!.name}\"，内容如下：\n---\n${snippet}\n---\n请将该附件与用户查询一起考虑。`;
+            })() : "";
+
+            let musePromptText = `用户的查询 (中文) 是: "${userInputForFlow}". ${imageInstructionForAI} ${textAttachmentInstructionForAI} 当前讨论 (均为中文):\n${localDiscussionLog.join("\n")}\n${MessageSender.Cognito} (逻辑AI) 刚刚说 (中文): "${localLastTurnTextForLog}". 请回复 ${MessageSender.Cognito}。继续讨论。保持您的回复简洁并使用中文。\n${commonPromptInstructions()}`;
             if (discussionMode === DiscussionMode.AiDriven && localPreviousAISignaledStop) musePromptText += `\n${MessageSender.Cognito} 已包含 ${DISCUSSION_COMPLETE_TAG} 建议结束讨论。如果您同意，请在您的回复中也包含 ${DISCUSSION_COMPLETE_TAG}。否则，请继续讨论。`;
 
             const museParsedResponse = await commonAIStepExecution(
                 museStepIdentifier, musePromptText, effectiveMuseModel, MessageSender.Muse, MessagePurpose.MuseToCognito, imageApiPartForFlow,
-                userInputForFlow, imageApiPartForFlow, [...localDiscussionLog], turn, localPreviousAISignaledStop
+                userInputForFlow, imageApiPartForFlow, [...localDiscussionLog], turn, localPreviousAISignaledStop, retriedStepPayload.textAttachmentForFlow
             );
             if (cancelRequestRef.current) return;
             processNotepadUpdateFromAI(museParsedResponse, MessageSender.Muse, addMessage);
@@ -322,12 +338,18 @@ export const useChatLogic = ({
 
           const cognitoReplyStepIdentifier = `cognito-reply-to-muse-turn-${turn}`;
           addMessage(`${MessageSender.Cognito} 正在回应 ${MessageSender.Muse} (使用 ${effectiveCognitoModel.name})...`, MessageSender.System, MessagePurpose.SystemNotification);
-          let cognitoReplyPromptText = `用户的查询 (中文) 是: "${userInputForFlow}". ${imageInstructionForAI} 当前讨论 (均为中文):\n${localDiscussionLog.join("\n")}\n${MessageSender.Muse} (创意AI) 刚刚说 (中文): "${localLastTurnTextForLog}". 请回复 ${MessageSender.Muse}。继续讨论。保持您的回复简洁并使用中文。\n${commonPromptInstructions()}`;
+          const textAttachmentInstructionForAI2 = retriedStepPayload.textAttachmentForFlow ? (() => {
+            const MAX = 6000;
+            const content = retriedStepPayload.textAttachmentForFlow!.content || '';
+            const snippet = content.length > MAX ? content.slice(0, MAX) + "\n…(附件已截断)" : content;
+            return `用户还提供了一个文本附件 \"${retriedStepPayload.textAttachmentForFlow!.name}\"，内容如下：\n---\n${snippet}\n---\n请将该附件与用户查询一起考虑。`;
+          })() : "";
+          let cognitoReplyPromptText = `用户的查询 (中文) 是: "${userInputForFlow}". ${imageInstructionForAI} ${textAttachmentInstructionForAI2} 当前讨论 (均为中文):\n${localDiscussionLog.join("\n")}\n${MessageSender.Muse} (创意AI) 刚刚说 (中文): "${localLastTurnTextForLog}". 请回复 ${MessageSender.Muse}。继续讨论。保持您的回复简洁并使用中文。\n${commonPromptInstructions()}`;
           if (discussionMode === DiscussionMode.AiDriven && localPreviousAISignaledStop) cognitoReplyPromptText += `\n${MessageSender.Muse} 已包含 ${DISCUSSION_COMPLETE_TAG} 建议结束讨论。如果您同意，请在您的回复中也包含 ${DISCUSSION_COMPLETE_TAG}。否则，请继续讨论。`;
 
           const cognitoReplyParsedResponse = await commonAIStepExecution(
               cognitoReplyStepIdentifier, cognitoReplyPromptText, effectiveCognitoModel, MessageSender.Cognito, MessagePurpose.CognitoToMuse, imageApiPartForFlow,
-              userInputForFlow, imageApiPartForFlow, [...localDiscussionLog], turn, localPreviousAISignaledStop
+              userInputForFlow, imageApiPartForFlow, [...localDiscussionLog], turn, localPreviousAISignaledStop, retriedStepPayload.textAttachmentForFlow
           );
           if (cancelRequestRef.current) return;
           processNotepadUpdateFromAI(cognitoReplyParsedResponse, MessageSender.Cognito, addMessage);
@@ -353,7 +375,13 @@ export const useChatLogic = ({
       const finalAnswerStepIdentifier = 'cognito-final-answer';
       addMessage(`${MessageSender.Cognito} 正在综合讨论内容，准备最终答案 (使用 ${effectiveCognitoModel.name})...`, MessageSender.System, MessagePurpose.SystemNotification);
 
-      const finalAnswerPromptText = `用户的查询 (中文) 是: "${userInputForFlow}". ${imageInstructionForAI} 您 (${MessageSender.Cognito}) 和 ${MessageSender.Muse} 进行了以下讨论 (均为中文):\n${localDiscussionLog.join("\n")}
+      const textAttachmentInstructionForAI3 = retriedStepPayload.textAttachmentForFlow ? (() => {
+        const MAX = 6000;
+        const content = retriedStepPayload.textAttachmentForFlow!.content || '';
+        const snippet = content.length > MAX ? content.slice(0, MAX) + "\n…(附件已截断)" : content;
+        return `用户还提供了一个文本附件 \"${retriedStepPayload.textAttachmentForFlow!.name}\"，内容如下：\n---\n${snippet}\n---\n请将该附件与用户查询一起考虑。`;
+      })() : "";
+      const finalAnswerPromptText = `用户的查询 (中文) 是: "${userInputForFlow}". ${imageInstructionForAI} ${textAttachmentInstructionForAI3} 您 (${MessageSender.Cognito}) 和 ${MessageSender.Muse} 进行了以下讨论 (均为中文):\n${localDiscussionLog.join("\n")}
 
 **您的最终任务是为用户生成最终答案，并将其放入记事本中。**
 
@@ -367,7 +395,7 @@ export const useChatLogic = ({
 
       const finalAnswerParsedResponse = await commonAIStepExecution(
           finalAnswerStepIdentifier, finalAnswerPromptText, effectiveCognitoModel, MessageSender.Cognito, MessagePurpose.FinalResponse, imageApiPartForFlow,
-          userInputForFlow, imageApiPartForFlow, [...localDiscussionLog]
+          userInputForFlow, imageApiPartForFlow, [...localDiscussionLog], undefined, undefined, retriedStepPayload.textAttachmentForFlow
       );
       if (cancelRequestRef.current) return;
       processNotepadUpdateFromAI(finalAnswerParsedResponse, MessageSender.Cognito, addMessage);
@@ -410,9 +438,9 @@ export const useChatLogic = ({
       setIsLoading, stopProcessingTimer, failedStepInfo, setIsInternalDiscussionActive, currentDiscussionTurn, setLastCompletedTurnCount // Added currentDiscussionTurn and setLastCompletedTurnCount
     ]);
 
-  const startChatProcessing = useCallback(async (userInput: string, imageFile?: File | null) => {
+  const startChatProcessing = useCallback(async (userInput: string, imageFile?: File | null, textAttachment?: { name: string; content: string } | null) => {
     if (isLoading) return;
-    if (!userInput.trim() && !imageFile) return;
+    if (!userInput.trim() && !imageFile && !textAttachment) return;
 
     cancelRequestRef.current = false;
     setIsLoading(true);
@@ -425,6 +453,7 @@ export const useChatLogic = ({
 
     let userImageForDisplay: ChatMessage['image'] | undefined = undefined;
     let geminiImageApiPart: { inlineData: { mimeType: string; data: string } } | undefined = undefined;
+    let userTextAttachmentForDisplay: ChatMessage['textAttachment'] | undefined = undefined;
 
     if (imageFile) {
       try {
@@ -442,7 +471,11 @@ export const useChatLogic = ({
       }
     }
 
-    addMessage(userInput, MessageSender.User, MessagePurpose.UserInput, undefined, userImageForDisplay);
+    if (textAttachment) {
+      userTextAttachmentForDisplay = { name: textAttachment.name, content: textAttachment.content };
+    }
+
+    addMessage(userInput, MessageSender.User, MessagePurpose.UserInput, undefined, userImageForDisplay, userTextAttachmentForDisplay);
 
     let currentLocalDiscussionLog: string[] = [];
     let lastTurnTextForLog = "";
@@ -451,17 +484,23 @@ export const useChatLogic = ({
     const effectiveMuseModel = museModelDetails;     
 
     const imageInstructionForAI = geminiImageApiPart ? "用户还提供了一张图片。请在您的分析和回复中同时考虑此图片和文本查询。" : "";
+    const textAttachmentInstructionForAI = textAttachment ? (() => {
+      const MAX = 6000;
+      const content = textAttachment.content || '';
+      const snippet = content.length > MAX ? content.slice(0, MAX) + "\n…(附件已截断)" : content;
+      return `用户还提供了一个文本附件 \"${textAttachment.name}\"，内容如下：\n---\n${snippet}\n---\n请将该附件与用户查询一起考虑。`;
+    })() : "";
     const discussionModeInstructionText = discussionMode === DiscussionMode.AiDriven ? AI_DRIVEN_DISCUSSION_INSTRUCTION_PROMPT_PART : "";
     const commonPromptInstructions = () => NOTEPAD_INSTRUCTION_PROMPT_PART.replace('{notepadContent}', formatNotepadContentForAI(notepadContent)) + discussionModeInstructionText;
 
     try {
       const cognitoInitialStepIdentifier = 'cognito-initial-to-muse';
       addMessage(`${MessageSender.Cognito} 正在为 ${MessageSender.Muse} 准备第一个观点 (使用 ${effectiveCognitoModel.name})...`, MessageSender.System, MessagePurpose.SystemNotification);
-      const cognitoPromptText = `${`用户的查询 (中文) 是: "${userInput}". ${imageInstructionForAI} 请针对此查询提供您的初步想法或分析，以便 ${MessageSender.Muse} (创意型AI) 可以回应并与您开始讨论。用中文回答。`}\n${commonPromptInstructions()}`;
+      const cognitoPromptText = `${`用户的查询 (中文) 是: "${userInput}". ${imageInstructionForAI} ${textAttachmentInstructionForAI} 请针对此查询提供您的初步想法或分析，以便 ${MessageSender.Muse} (创意型AI) 可以回应并与您开始讨论。用中文回答。`}\n${commonPromptInstructions()}`;
 
       const cognitoParsedResponse = await commonAIStepExecution(
           cognitoInitialStepIdentifier, cognitoPromptText, effectiveCognitoModel, MessageSender.Cognito, MessagePurpose.CognitoToMuse, geminiImageApiPart,
-          userInput, geminiImageApiPart, [] 
+          userInput, geminiImageApiPart, [], undefined, undefined, textAttachment || undefined
       );
       if (cancelRequestRef.current) throw new Error("用户取消操作");
       processNotepadUpdateFromAI(cognitoParsedResponse, MessageSender.Cognito, addMessage);
@@ -482,12 +521,12 @@ export const useChatLogic = ({
 
         const museStepIdentifier = `muse-reply-to-cognito-turn-${turn}`;
         addMessage(`${MessageSender.Muse} 正在回应 ${MessageSender.Cognito} (使用 ${effectiveMuseModel.name})...`, MessageSender.System, MessagePurpose.SystemNotification);
-        let musePromptText = `用户的查询 (中文) 是: "${userInput}". ${imageInstructionForAI} 当前讨论 (均为中文):\n${currentLocalDiscussionLog.join("\n")}\n${MessageSender.Cognito} (逻辑AI) 刚刚说 (中文): "${lastTurnTextForLog}". 请回复 ${MessageSender.Cognito}。继续讨论。保持您的回复简洁并使用中文。\n${commonPromptInstructions()}`;
+        let musePromptText = `用户的查询 (中文) 是: "${userInput}". ${imageInstructionForAI} ${textAttachmentInstructionForAI} 当前讨论 (均为中文):\n${currentLocalDiscussionLog.join("\n")}\n${MessageSender.Cognito} (逻辑AI) 刚刚说 (中文): "${lastTurnTextForLog}". 请回复 ${MessageSender.Cognito}。继续讨论。保持您的回复简洁并使用中文。\n${commonPromptInstructions()}`;
         if (discussionMode === DiscussionMode.AiDriven && previousAISignaledStop) musePromptText += `\n${MessageSender.Cognito} 已包含 ${DISCUSSION_COMPLETE_TAG} 建议结束讨论。如果您同意，请在您的回复中也包含 ${DISCUSSION_COMPLETE_TAG}。否则，请继续讨论。`;
 
         const museParsedResponse = await commonAIStepExecution(
             museStepIdentifier, musePromptText, effectiveMuseModel, MessageSender.Muse, MessagePurpose.MuseToCognito, geminiImageApiPart,
-            userInput, geminiImageApiPart, [...currentLocalDiscussionLog], turn, previousAISignaledStop
+            userInput, geminiImageApiPart, [...currentLocalDiscussionLog], turn, previousAISignaledStop, textAttachment || undefined
         );
         if (cancelRequestRef.current) break;
         processNotepadUpdateFromAI(museParsedResponse, MessageSender.Muse, addMessage);
@@ -509,12 +548,12 @@ export const useChatLogic = ({
 
         const cognitoReplyStepIdentifier = `cognito-reply-to-muse-turn-${turn}`;
         addMessage(`${MessageSender.Cognito} 正在回应 ${MessageSender.Muse} (使用 ${effectiveCognitoModel.name})...`, MessageSender.System, MessagePurpose.SystemNotification);
-        let cognitoReplyPromptText = `用户的查询 (中文) 是: "${userInput}". ${imageInstructionForAI} 当前讨论 (均为中文):\n${currentLocalDiscussionLog.join("\n")}\n${MessageSender.Muse} (创意AI) 刚刚说 (中文): "${lastTurnTextForLog}". 请回复 ${MessageSender.Muse}。继续讨论。保持您的回复简洁并使用中文。\n${commonPromptInstructions()}`;
+        let cognitoReplyPromptText = `用户的查询 (中文) 是: "${userInput}". ${imageInstructionForAI} ${textAttachmentInstructionForAI} 当前讨论 (均为中文):\n${currentLocalDiscussionLog.join("\n")}\n${MessageSender.Muse} (创意AI) 刚刚说 (中文): "${lastTurnTextForLog}". 请回复 ${MessageSender.Muse}。继续讨论。保持您的回复简洁并使用中文。\n${commonPromptInstructions()}`;
         if (discussionMode === DiscussionMode.AiDriven && previousAISignaledStop) cognitoReplyPromptText += `\n${MessageSender.Muse} 已包含 ${DISCUSSION_COMPLETE_TAG} 建议结束讨论。如果您同意，请在您的回复中也包含 ${DISCUSSION_COMPLETE_TAG}。否则，请继续讨论。`;
 
         const cognitoReplyParsedResponse = await commonAIStepExecution(
             cognitoReplyStepIdentifier, cognitoReplyPromptText, effectiveCognitoModel, MessageSender.Cognito, MessagePurpose.CognitoToMuse, geminiImageApiPart,
-            userInput, geminiImageApiPart, [...currentLocalDiscussionLog], turn, previousAISignaledStop
+            userInput, geminiImageApiPart, [...currentLocalDiscussionLog], turn, previousAISignaledStop, textAttachment || undefined
         );
         if (cancelRequestRef.current) break;
         processNotepadUpdateFromAI(cognitoReplyParsedResponse, MessageSender.Cognito, addMessage);
@@ -537,7 +576,7 @@ export const useChatLogic = ({
 
       const finalAnswerStepIdentifier = 'cognito-final-answer';
       addMessage(`${MessageSender.Cognito} 正在综合讨论内容，准备最终答案 (使用 ${effectiveCognitoModel.name})...`, MessageSender.System, MessagePurpose.SystemNotification);
-      const finalAnswerPromptText = `用户的查询 (中文) 是: "${userInput}". ${imageInstructionForAI} 您 (${MessageSender.Cognito}) 和 ${MessageSender.Muse} 进行了以下讨论 (均为中文):\n${currentLocalDiscussionLog.join("\n")}
+      const finalAnswerPromptText = `用户的查询 (中文) 是: "${userInput}". ${imageInstructionForAI} ${textAttachmentInstructionForAI} 您 (${MessageSender.Cognito}) 和 ${MessageSender.Muse} 进行了以下讨论 (均为中文):\n${currentLocalDiscussionLog.join("\n")}
 
 **您的最终任务是为用户生成最终答案，并将其放入记事本中。**
 
@@ -551,7 +590,7 @@ export const useChatLogic = ({
 
       const finalAnswerParsedResponse = await commonAIStepExecution(
           finalAnswerStepIdentifier, finalAnswerPromptText, effectiveCognitoModel, MessageSender.Cognito, MessagePurpose.FinalResponse, geminiImageApiPart,
-          userInput, geminiImageApiPart, [...currentLocalDiscussionLog]
+          userInput, geminiImageApiPart, [...currentLocalDiscussionLog], undefined, undefined, textAttachment || undefined
       );
       if (cancelRequestRef.current) throw new Error("用户取消操作");
       processNotepadUpdateFromAI(finalAnswerParsedResponse, MessageSender.Cognito, addMessage);

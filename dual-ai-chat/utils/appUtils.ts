@@ -301,3 +301,10 @@ export const getWelcomeMessageText = (
 
   return `欢迎使用Dual AI Chat！当前模式: ${modeDescription}。\n${modelInfo}.\n在下方输入您的问题或上传图片。${MessageSender.Cognito} 和 ${MessageSender.Muse} 将进行讨论，然后 ${MessageSender.Cognito} 会将最终答案呈现在右侧的记事本中。`;
 };
+
+export const makeConversationTitleFromText = (text: string): string => {
+  const firstLine = (text || '').split('\n').map(s => s.trim()).find(Boolean) || '';
+  const trimmed = firstLine.replace(/\s+/g, ' ').trim();
+  const base = trimmed.length > 0 ? trimmed : '新会话';
+  return base.length > 40 ? base.slice(0, 40) + '…' : base;
+};

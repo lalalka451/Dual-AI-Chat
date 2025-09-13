@@ -59,6 +59,14 @@ export const useNotepadLogic = (initialContent: string) => {
     _addHistoryEntry(initialContent, null);
   }, [initialContent, _addHistoryEntry]);
 
+  // Allow external replacement (e.g., when loading a conversation from history)
+  const setNotepadFromExternal = useCallback((content: string) => {
+    setNotepadHistory([content]);
+    setCurrentHistoryIndex(0);
+    setNotepadContent(content);
+    setLastNotepadUpdateBy(null);
+  }, []);
+
   const undoNotepad = useCallback(() => {
     if (currentHistoryIndex > 0) {
       const newIndex = currentHistoryIndex - 1;
@@ -85,6 +93,7 @@ export const useNotepadLogic = (initialContent: string) => {
     lastNotepadUpdateBy,
     processNotepadUpdateFromAI,
     clearNotepadContent,
+    setNotepadFromExternal,
     // setNotepadContent is no longer exposed directly for external modification without history tracking
     undoNotepad,
     redoNotepad,

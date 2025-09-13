@@ -1,11 +1,12 @@
 
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { ChatMessage, MessageSender, MessagePurpose, FailedStepPayload, DiscussionMode } from './types';
+import { ChatMessage, MessageSender, MessagePurpose, FailedStepPayload, DiscussionMode, ChatConversation, StoredChatMessage } from './types';
 import ChatInput from './components/ChatInput';
 import MessageBubble from './components/MessageBubble';
 import Notepad from './components/Notepad';
 import SettingsModal from './components/SettingsModal';
+import ChatHistoryModal from './components/ChatHistoryModal';
 import {
   MODELS,
   DEFAULT_COGNITO_MODEL_API_NAME, 
@@ -29,13 +30,15 @@ import {
   DEFAULT_OPENAI_API_BASE_URL,
   DEFAULT_OPENAI_COGNITO_MODEL_ID,
   DEFAULT_OPENAI_MUSE_MODEL_ID,
+  CHAT_HISTORY_STORAGE_KEY,
+  CURRENT_CONVERSATION_ID_STORAGE_KEY,
 } from './constants';
 import { BotMessageSquare, AlertTriangle, RefreshCcw as RefreshCwIcon, Settings2, Brain, Sparkles, Database } from 'lucide-react'; 
 
 import { useChatLogic } from './hooks/useChatLogic';
 import { useNotepadLogic } from './hooks/useNotepadLogic';
 import { useAppUI } from './hooks/useAppUI';
-import { generateUniqueId, getWelcomeMessageText } from './utils/appUtils';
+import { generateUniqueId, getWelcomeMessageText, makeConversationTitleFromText } from './utils/appUtils';
 
 const DEFAULT_CHAT_PANEL_PERCENT = 60; 
 const FONT_SIZE_STORAGE_KEY = 'dualAiChatFontSizeScale';
@@ -50,6 +53,19 @@ interface ApiKeyStatus {
 
 const App: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [conversations, setConversations] = useState<ChatConversation[]>(() => {
+    try {
+      const raw = localStorage.getItem(CHAT_HISTORY_STORAGE_KEY);
+      return raw ? (JSON.parse(raw) as ChatConversation[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(() => localStorage.getItem(CURRENT_CONVERSATION_ID_STORAGE_KEY));
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState<boolean>(false);
+  const currentConversationIdRef = useRef<string | null>(
+    typeof window !== 'undefined' ? localStorage.getItem(CURRENT_CONVERSATION_ID_STORAGE_KEY) : null
+  );
   
   // Gemini Custom API Config State
   const [useCustomApiConfig, setUseCustomApiConfig] = useState<boolean>(() => {
@@ -121,15 +137,20 @@ const App: React.FC = () => {
     canRedo,
   } = useNotepadLogic(INITIAL_NOTEPAD_CONTENT);
 
+  // Keep a ref of notepad content for consistent persistence in callbacks
+  const notepadContentRef = useRef<string>(INITIAL_NOTEPAD_CONTENT);
+  useEffect(() => { notepadContentRef.current = notepadContent; }, [notepadContent]);
+
   const addMessage = useCallback((
     text: string,
     sender: MessageSender,
     purpose: MessagePurpose,
     durationMs?: number,
-    image?: ChatMessage['image']
+    image?: ChatMessage['image'],
+    textAttachment?: ChatMessage['textAttachment']
   ): string => {
     const messageId = generateUniqueId();
-    setMessages(prev => [...prev, {
+    const message: ChatMessage = {
       id: messageId,
       text,
       sender,
@@ -137,7 +158,49 @@ const App: React.FC = () => {
       timestamp: new Date(),
       durationMs,
       image,
-    }]);
+      textAttachment,
+    };
+    setMessages(prev => [...prev, message]);
+
+    // Persist to conversation history
+    setConversations(prev => {
+      const storeMsg: StoredChatMessage = { ...message, timestamp: message.timestamp.toISOString() };
+      let convId = currentConversationIdRef.current;
+      let updated = prev;
+      if (!convId) {
+        convId = generateUniqueId();
+        currentConversationIdRef.current = convId;
+        setCurrentConversationId(convId);
+        const now = new Date().toISOString();
+        updated = [
+          {
+            id: convId,
+            title: sender === MessageSender.User ? makeConversationTitleFromText(text) : '新会话',
+            createdAt: now,
+            updatedAt: now,
+            messages: [storeMsg],
+            notepad: notepadContentRef.current,
+          },
+          ...prev,
+        ];
+      } else {
+        let found = false;
+        updated = prev.map(c => {
+          if (c.id !== convId!) return c;
+          found = true;
+          const newTitle = c.title === '新会话' && sender === MessageSender.User ? makeConversationTitleFromText(text) : c.title;
+          return { ...c, title: newTitle, updatedAt: new Date().toISOString(), messages: [...c.messages, storeMsg] };
+        });
+        if (!found) {
+          const now = new Date().toISOString();
+          updated = [
+            { id: convId, title: sender === MessageSender.User ? makeConversationTitleFromText(text) : '新会话', createdAt: now, updatedAt: now, messages: [storeMsg], notepad: notepadContentRef.current },
+            ...updated,
+          ];
+        }
+      }
+      return updated;
+    });
     return messageId;
   }, []);
   
@@ -278,10 +341,67 @@ const App: React.FC = () => {
     }
   }, [addMessage, clearNotepadContent, actualCognitoModelDetails.name, actualMuseModelDetails.name, discussionMode, manualFixedTurns, setIsNotepadFullscreen, useCustomApiConfig, customApiKey, useOpenAiApiConfig, openAiApiBaseUrl, openAiApiKey, openAiCognitoModelId, openAiMuseModelId]);
 
+  const hasInitializedRef = useRef<boolean>(false);
+  const safeHydrateMessages = useCallback((maybeMessages: any): ChatMessage[] => {
+    if (!Array.isArray(maybeMessages)) return [];
+    const hydrated: ChatMessage[] = [];
+    for (const m of maybeMessages) {
+      try {
+        if (!m || typeof m !== 'object') continue;
+        hydrated.push({
+          id: String(m.id || generateUniqueId()),
+          text: String(m.text || ''),
+          sender: m.sender as MessageSender,
+          purpose: m.purpose as MessagePurpose,
+          timestamp: new Date(m.timestamp || Date.now()),
+          durationMs: typeof m.durationMs === 'number' ? m.durationMs : undefined,
+          image: m.image && m.image.dataUrl ? { dataUrl: m.image.dataUrl, name: String(m.image.name || ''), type: String(m.image.type || '') } : undefined,
+          textAttachment: m.textAttachment && m.textAttachment.content ? { name: String(m.textAttachment.name || '附件.txt'), content: String(m.textAttachment.content) } : undefined,
+        });
+      } catch {
+        // skip invalid record
+      }
+    }
+    return hydrated;
+  }, []);
   useEffect(() => {
+    if (!hasInitializedRef.current) {
+      hasInitializedRef.current = true;
+      if (currentConversationId) {
+        try {
+          const conv = conversations.find(c => c.id === currentConversationId);
+          if (conv) {
+            setMessages(safeHydrateMessages((conv as any).messages));
+            currentConversationIdRef.current = currentConversationId;
+            // Restore notepad content
+            const restored = conv.notepad ?? INITIAL_NOTEPAD_CONTENT;
+            setNotepadFromExternal(restored);
+            return;
+          }
+        } catch {}
+      }
+      initializeChat();
+      return;
+    }
+    // Re-init on API config mode changes
     initializeChat();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [useCustomApiConfig, useOpenAiApiConfig]); // Re-initialize if API config mode changes
+  }, [useCustomApiConfig, useOpenAiApiConfig]);
+
+  // Persist history and current conversation id
+  useEffect(() => { try { localStorage.setItem(CHAT_HISTORY_STORAGE_KEY, JSON.stringify(conversations)); } catch {} }, [conversations]);
+  useEffect(() => {
+    if (currentConversationId) { try { localStorage.setItem(CURRENT_CONVERSATION_ID_STORAGE_KEY, currentConversationId); } catch {} }
+    else { try { localStorage.removeItem(CURRENT_CONVERSATION_ID_STORAGE_KEY); } catch {} }
+    currentConversationIdRef.current = currentConversationId;
+  }, [currentConversationId]);
+
+  // Persist notepad content into the current conversation whenever it changes
+  useEffect(() => {
+    const cid = currentConversationIdRef.current;
+    if (!cid) return;
+    setConversations(prev => prev.map(c => c.id === cid ? { ...c, notepad: notepadContent } : c));
+  }, [notepadContent]);
 
    useEffect(() => {
      const welcomeMessage = messages.find(msg => msg.sender === MessageSender.System && msg.text.startsWith("欢迎使用Dual AI Chat！"));
@@ -327,8 +447,50 @@ const App: React.FC = () => {
     if (isLoading) {
       stopChatLogicGeneration(); 
     }
-    initializeChat(); 
-  }, [isLoading, stopChatLogicGeneration, initializeChat]);
+    // Reset to a fresh conversation (id created on first message)
+    setMessages([]);
+    setCurrentConversationId(null);
+    currentConversationIdRef.current = null;
+    clearNotepadContent();
+    setIsNotepadFullscreen(false);
+    setIsAutoScrollEnabled(true);
+    setApiKeyStatus({});
+
+    let missingKeyMsg = "";
+    if (useOpenAiApiConfig) {
+      if (!openAiApiBaseUrl.trim() || !openAiCognitoModelId.trim() || !openAiMuseModelId.trim()) {
+        missingKeyMsg = "OpenAI API 配置不完整 (需要基地址和Cognito/Muse的模型ID)。请在设置中提供，或关闭“使用OpenAI API配置”。";
+      }
+    } else if (useCustomApiConfig) {
+      if (!customApiKey.trim()) {
+        missingKeyMsg = "自定义 Gemini API 密钥未在设置中提供。请在设置中输入密钥，或关闭“使用自定义API配置”。";
+      }
+    } else {
+      if (!(process.env.API_KEY && process.env.API_KEY.trim() !== "")) {
+        missingKeyMsg = "Google Gemini API 密钥未在环境变量中配置。请配置该密钥，或在设置中启用并提供自定义API配置。";
+      }
+    }
+
+    if (missingKeyMsg) {
+      const fullWarning = `严重警告：${missingKeyMsg} 在此之前，应用程序功能将受限。`;
+      addMessage(fullWarning, MessageSender.System, MessagePurpose.SystemNotification);
+      setApiKeyStatus({ isMissing: true, message: missingKeyMsg });
+    } else {
+      addMessage(
+        getWelcomeMessageText(
+            actualCognitoModelDetails.name, 
+            actualMuseModelDetails.name, 
+            discussionMode, 
+            manualFixedTurns, 
+            useOpenAiApiConfig, 
+            openAiCognitoModelId, 
+            openAiMuseModelId
+        ),
+        MessageSender.System,
+        MessagePurpose.SystemNotification
+      );
+    }
+  }, [isLoading, stopChatLogicGeneration, clearNotepadContent, setIsNotepadFullscreen, useOpenAiApiConfig, openAiApiBaseUrl, openAiCognitoModelId, openAiMuseModelId, useCustomApiConfig, customApiKey, addMessage, actualCognitoModelDetails.name, actualMuseModelDetails.name, discussionMode, manualFixedTurns]);
 
   const handleStopGeneratingAppLevel = useCallback(() => {
     stopChatLogicGeneration();
@@ -476,10 +638,16 @@ const App: React.FC = () => {
             </>
           )}
           <Separator />
-           <button onClick={openSettingsModal}
+          <button onClick={openSettingsModal}
             className="p-1.5 md:p-2 text-gray-500 hover:text-sky-600 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-gray-50 rounded-md shrink-0 disabled:opacity-70 disabled:cursor-not-allowed"
             aria-label="打开设置" title="打开设置" disabled={isLoading && !cancelRequestRef.current && !failedStepInfo}>
             <Settings2 size={20} /> 
+          </button>
+          <button onClick={() => setIsHistoryModalOpen(true)}
+            className="p-1.5 md:p-2 text-gray-500 hover:text-indigo-600 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-gray-50 rounded-md shrink-0 disabled:opacity-70 disabled:cursor-not-allowed"
+            aria-label="打开历史" title="打开历史" disabled={isLoading && !cancelRequestRef.current && !failedStepInfo}
+          >
+            <Database size={20} />
           </button>
           <button onClick={handleClearChat}
             className="p-1.5 md:p-2 text-gray-500 hover:text-sky-600 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-gray-50 rounded-md shrink-0 disabled:opacity-70 disabled:cursor-not-allowed"
@@ -643,6 +811,42 @@ const App: React.FC = () => {
           onOpenAiCognitoModelIdChange={(e) => setOpenAiCognitoModelId(e.target.value)}
           openAiMuseModelId={openAiMuseModelId}
           onOpenAiMuseModelIdChange={(e) => setOpenAiMuseModelId(e.target.value)}
+        />
+      )}
+      {isHistoryModalOpen && (
+        <ChatHistoryModal
+          isOpen={isHistoryModalOpen}
+          onClose={() => setIsHistoryModalOpen(false)}
+          conversations={conversations}
+          currentConversationId={currentConversationId}
+          onSelectConversation={(id) => {
+            const conv = conversations.find(c => c.id === id);
+            if (conv) {
+              setCurrentConversationId(id);
+              currentConversationIdRef.current = id;
+              setMessages(safeHydrateMessages((conv as any).messages));
+              const restored = conv.notepad ?? INITIAL_NOTEPAD_CONTENT;
+              setNotepadFromExternal(restored);
+              setIsHistoryModalOpen(false);
+            }
+          }}
+          onDeleteConversation={(id) => {
+            setConversations(prev => prev.filter(c => c.id !== id));
+            if (currentConversationId === id) {
+              setCurrentConversationId(null);
+              currentConversationIdRef.current = null;
+              setMessages([]);
+            }
+          }}
+          onDeleteAll={() => {
+            setConversations([]);
+            setCurrentConversationId(null);
+            currentConversationIdRef.current = null;
+            setMessages([]);
+          }}
+          onRenameConversation={(id, newTitle) => {
+            setConversations(prev => prev.map(c => c.id === id ? { ...c, title: newTitle, updatedAt: new Date().toISOString() } : c));
+          }}
         />
       )}
     </div>

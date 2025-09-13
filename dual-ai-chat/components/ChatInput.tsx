@@ -3,19 +3,23 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Send, Paperclip, XCircle, StopCircle } from 'lucide-react'; // Added StopCircle
 import LoadingSpinner from './LoadingSpinner';
 
+interface TextAttachment { name: string; content: string }
+
 interface ChatInputProps {
-  onSendMessage: (message: string, imageFile?: File | null) => void;
+  onSendMessage: (message: string, imageFile?: File | null, textAttachment?: TextAttachment | null) => void;
   isLoading: boolean;
   isApiKeyMissing: boolean;
   onStopGenerating: () => void; // New prop
 }
 
 const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+const ACCEPTED_TEXT_TYPES = ['text/plain'];
 
 const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, isApiKeyMissing, onStopGenerating }) => {
   const [inputValue, setInputValue] = useState('');
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const [selectedTextAttachment, setSelectedTextAttachment] = useState<TextAttachment | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -32,11 +36,27 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, isApiKe
   const handleImageFile = (file: File | null) => {
     if (file && ACCEPTED_IMAGE_TYPES.includes(file.type)) {
       setSelectedImage(file);
+      setSelectedTextAttachment(null);
+    } else if (file && (ACCEPTED_TEXT_TYPES.includes(file.type) || file.name.toLowerCase().endsWith('.txt'))) {
+      // Read text file and store as a separate attachment preview
+      const reader = new FileReader();
+      reader.onload = () => {
+        const content = (reader.result as string) || '';
+        setSelectedTextAttachment({ name: file.name, content });
+        setSelectedImage(null);
+      };
+      reader.onerror = () => {
+        alert('读取文本文件失败。');
+        setSelectedTextAttachment(null);
+      };
+      reader.readAsText(file, 'utf-8');
     } else if (file) {
-      alert('不支持的文件类型。请选择 JPG, PNG, GIF, 或 WEBP 格式的图片。');
+      alert('不支持的文件类型。请选择 JPG, PNG, GIF, WEBP 图片或 TXT 文本文件。');
       setSelectedImage(null);
+      setSelectedTextAttachment(null);
     } else {
       setSelectedImage(null);
+      setSelectedTextAttachment(null);
     }
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -48,11 +68,16 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, isApiKe
     setImagePreviewUrl(null);
   };
 
+  const removeTextAttachment = () => {
+    setSelectedTextAttachment(null);
+  }
+
   const triggerSendMessage = () => {
-    if ((inputValue.trim() || selectedImage) && !isLoading && !isApiKeyMissing) {
-      onSendMessage(inputValue.trim(), selectedImage);
+    if ((inputValue.trim() || selectedImage || selectedTextAttachment) && !isLoading && !isApiKeyMissing) {
+      onSendMessage(inputValue.trim(), selectedImage, selectedTextAttachment);
       setInputValue('');
       removeImage();
+      removeTextAttachment();
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto';
       }
@@ -141,6 +166,26 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, isApiKe
           <div className="text-xs text-gray-600 mt-1 truncate">{selectedImage.name} ({(selectedImage.size / 1024).toFixed(1)} KB)</div>
         </div>
       )}
+      {selectedTextAttachment && (
+        <div className="mb-2 p-2 bg-gray-100 rounded-md relative max-w-2xl border border-gray-300">
+          <div className="flex items-center justify-between mb-1">
+            <div className="text-xs text-gray-700 truncate" title={selectedTextAttachment.name}>
+              附加文本: {selectedTextAttachment.name}
+            </div>
+            <button
+              type="button"
+              onClick={removeTextAttachment}
+              className="bg-black bg-opacity-40 text-white rounded-full p-0.5 hover:bg-opacity-60"
+              aria-label="移除文本附件"
+            >
+              <XCircle size={18} />
+            </button>
+          </div>
+          <pre className="text-xs bg-white border border-gray-200 rounded p-2 max-h-40 overflow-auto whitespace-pre-wrap break-words">
+{selectedTextAttachment.content}
+          </pre>
+        </div>
+      )}
       <div className="flex items-center space-x-2"> {/* Changed items-end to items-center */}
         <textarea
           ref={textareaRef}
@@ -166,17 +211,17 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, isApiKe
           type="file"
           ref={fileInputRef}
           onChange={handleFileSelected}
-          accept={ACCEPTED_IMAGE_TYPES.join(',')}
+          accept={`${ACCEPTED_IMAGE_TYPES.join(',')},.txt,text/plain`}
           className="hidden"
-          aria-label="选择图片文件"
+          aria-label="选择附件文件"
         />
         <button
           type="button"
           onClick={handleFileButtonClick}
           className="p-3 bg-gray-300 hover:bg-gray-400 rounded-lg text-gray-700 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-gray-100 disabled:opacity-50 disabled:cursor-not-allowed h-[48px]" // Removed self-end
           disabled={isDisabledInput}
-          aria-label="添加图片附件"
-          title="添加图片"
+          aria-label="添加附件"
+          title="添加附件"
         >
           <Paperclip size={24} />
         </button>

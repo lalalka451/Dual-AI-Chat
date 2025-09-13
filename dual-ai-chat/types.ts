@@ -25,6 +25,22 @@ export interface ChatMessage {
     name: string;
     type: string;
   };
+  textAttachment?: { // Optional plain text attachment for user messages
+    name: string;
+    content: string; // raw text content
+  };
+}
+
+// Storage-friendly version of ChatMessage
+export type StoredChatMessage = Omit<ChatMessage, 'timestamp'> & { timestamp: string };
+
+export interface ChatConversation {
+  id: string;
+  title: string;
+  createdAt: string; // ISO string
+  updatedAt: string; // ISO string
+  messages: StoredChatMessage[];
+  notepad?: string; // Persisted notepad content for this conversation
 }
 
 // Updated types for structured notepad modifications based on HTML-like tags
@@ -54,6 +70,7 @@ export interface FailedStepPayload {
   thinkingConfig?: { thinkingBudget: number };
   userInputForFlow: string;
   imageApiPartForFlow?: { inlineData: { mimeType: string; data: string } };
+  textAttachmentForFlow?: { name: string; content: string };
   discussionLogBeforeFailure: string[];
   currentTurnIndexForResume?: number;
   previousAISignaledStopForResume?: boolean;

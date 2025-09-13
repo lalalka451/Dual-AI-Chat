@@ -91,7 +91,7 @@ interface MessageBubbleProps {
 }
 
 const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onManualRetry, failedStepPayloadForThisMessage }) => {
-  const { text: messageText, sender, purpose, timestamp, durationMs, image, id: messageId } = message;
+  const { text: messageText, sender, purpose, timestamp, durationMs, image, textAttachment, id: messageId } = message;
   const formattedTime = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const [isCopied, setIsCopied] = useState(false);
 
@@ -191,6 +191,16 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onManualRetry, f
               alt={image.name || "用户上传的图片"} 
               className="max-w-xs max-h-64 rounded-md object-contain" 
             />
+          </div>
+        )}
+        {textAttachment && sender === MessageSender.User && (
+          <div className={`mt-2 ${messageText || image ? `pt-2 border-t ${sender === MessageSender.User ? 'border-blue-400' : 'border-gray-300'}` : ''}`}>
+            <div className="text-xs font-medium mb-1">
+              附加文本: {textAttachment.name}
+            </div>
+            <pre className="text-xs bg-white border border-gray-200 rounded p-2 max-h-64 overflow-auto whitespace-pre-wrap break-words">
+{textAttachment.content}
+            </pre>
           </div>
         )}
         <div className={`text-xs ${bubbleTimestampColorClass} mt-2 flex justify-between items-center`}>
